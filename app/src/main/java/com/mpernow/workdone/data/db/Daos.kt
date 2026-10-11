@@ -157,11 +157,14 @@ interface SetEntryDao {
     /** Appends a set to the end of a workout. The position is computed in the same statement, so it can't race. */
     @Query(
         """
-        INSERT INTO set_entries (workoutId, exerciseId, position, reps, weightKg, durationSeconds, distanceMeters)
+        INSERT INTO set_entries (
+            workoutId, exerciseId, position, reps, weightKg, durationSeconds, distanceMeters,
+            restSeconds, splitSeconds, resistance
+        )
         VALUES (
             :workoutId, :exerciseId,
             (SELECT COALESCE(MAX(position), -1) + 1 FROM set_entries WHERE workoutId = :workoutId),
-            :reps, :weightKg, :durationSeconds, :distanceMeters
+            :reps, :weightKg, :durationSeconds, :distanceMeters, :restSeconds, :splitSeconds, :resistance
         )
         """
     )
@@ -172,6 +175,9 @@ interface SetEntryDao {
         weightKg: Double?,
         durationSeconds: Int?,
         distanceMeters: Double?,
+        restSeconds: Int? = null,
+        splitSeconds: Double? = null,
+        resistance: Int? = null,
     ): Long
 
     @Insert

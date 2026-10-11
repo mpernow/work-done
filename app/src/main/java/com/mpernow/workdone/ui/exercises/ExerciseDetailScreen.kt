@@ -242,7 +242,7 @@ private fun ProgressChartCard(ui: ExerciseProgressUi, onSelectMetric: (ProgressM
                     "${shortDate.format(point.date)} · ${Progress.format(point.value, metric.kind, ui.unit)}"
                 },
                 axisSteps = when (metric.kind) {
-                    MetricKind.DURATION, MetricKind.PACE -> AxisSteps.TIME
+                    MetricKind.DURATION, MetricKind.PACE, MetricKind.SPLIT -> AxisSteps.TIME
                     MetricKind.REPS -> AxisSteps.INTEGER
                     MetricKind.WEIGHT, MetricKind.DISTANCE -> AxisSteps.DECIMAL
                 },

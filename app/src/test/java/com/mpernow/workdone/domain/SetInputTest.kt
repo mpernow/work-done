@@ -82,4 +82,43 @@ class SetInputTest {
         assertEquals("0", SetInput.formatDecimal(0.0))
         assertEquals("1.23", SetInput.formatDecimal(1.234))
     }
+
+    @Test
+    fun timeIntervalsNeedTimeAndSplit() {
+        val draft = SetDraft(workTime = "200", split = "1524", rest = "100", resistance = "6")
+        assertEquals(
+            SetValues(durationSeconds = 120, splitSeconds = 112.4, restSeconds = 60, resistance = 6),
+            SetInput.parse(draft, TrackingType.INTERVALS_TIME, WeightUnit.KG),
+        )
+        assertNull(SetInput.parse(draft.copy(split = ""), TrackingType.INTERVALS_TIME, WeightUnit.KG))
+        assertNull(SetInput.parse(draft.copy(workTime = ""), TrackingType.INTERVALS_TIME, WeightUnit.KG))
+    }
+
+    @Test
+    fun distanceIntervalsNeedMetresAndSplitButRestAndResistanceAreOptional() {
+        val values = SetInput.parse(SetDraft(distanceMeters = "500", split = "1550"), TrackingType.INTERVALS_DISTANCE, WeightUnit.KG)
+        assertEquals(SetValues(distanceMeters = 500.0, splitSeconds = 115.0), values)
+    }
+
+    @Test
+    fun invalidOptionalIntervalFieldsBlockTheSet() {
+        val draft = SetDraft(distanceMeters = "500", split = "1550", rest = "190")
+        assertNull(SetInput.parse(draft, TrackingType.INTERVALS_DISTANCE, WeightUnit.KG))
+    }
+
+    @Test
+    fun intervalsPrefillAndDescribe() {
+        val values = SetValues(distanceMeters = 500.0, splitSeconds = 112.4, restSeconds = 90, resistance = 6)
+        val draft = SetInput.draftFrom(values, WeightUnit.KG)
+        assertEquals(SetDraft(distanceKm = "0.5", distanceMeters = "500", split = "1524", rest = "130", resistance = "6"), draft)
+        assertEquals(values, SetInput.parse(draft, TrackingType.INTERVALS_DISTANCE, WeightUnit.KG))
+        assertEquals(
+            "500 m · 1:52.4 /500m · rest 1:30 · resistance 6",
+            SetInput.describe(values, TrackingType.INTERVALS_DISTANCE, WeightUnit.KG),
+        )
+        assertEquals(
+            "2:00 · 1:52.4 /500m",
+            SetInput.describe(SetValues(durationSeconds = 120, splitSeconds = 112.4), TrackingType.INTERVALS_TIME, WeightUnit.KG),
+        )
+    }
 }

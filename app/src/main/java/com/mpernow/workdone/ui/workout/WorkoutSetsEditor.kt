@@ -103,6 +103,9 @@ class WorkoutSetsEditor(
                     weightKg = values.weightKg,
                     durationSeconds = values.durationSeconds,
                     distanceMeters = values.distanceMeters,
+                    restSeconds = values.restSeconds,
+                    splitSeconds = values.splitSeconds,
+                    resistance = values.resistance,
                 ),
             )
         }

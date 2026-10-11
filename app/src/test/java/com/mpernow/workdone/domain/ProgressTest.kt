@@ -72,4 +72,29 @@ class ProgressTest {
         assertEquals("12K", Progress.compactNumber(12_400.0))
         assertEquals("82.5", Progress.compactNumber(82.5))
     }
+
+    @Test
+    fun intervalWorkIsWorkedOutFromTheSplit() {
+        val byTime = SetValues(durationSeconds = 120, splitSeconds = 120.0)
+        val byDistance = SetValues(distanceMeters = 500.0, splitSeconds = 110.0)
+        assertEquals(500.0, byTime.workMeters!!, 1e-9)
+        assertEquals(110.0, byDistance.workSeconds!!, 1e-9)
+    }
+
+    @Test
+    fun averageSplitIsWeightedByDistance() {
+        // 1000 m at 2:00 and 500 m at 1:45: 360 s over 1500 m is 2:00 × 2/3 + 1:45 × 1/3 = 1:55.
+        val sets = listOf(
+            SetValues(distanceMeters = 1000.0, splitSeconds = 120.0),
+            SetValues(distanceMeters = 500.0, splitSeconds = 105.0),
+        )
+        assertEquals(115.0, Progress.sessionValue(sets, ProgressMetric.AVERAGE_SPLIT)!!, 1e-9)
+        assertEquals(105.0, Progress.sessionValue(sets, ProgressMetric.BEST_SPLIT))
+        assertEquals(1500.0, Progress.sessionValue(sets, ProgressMetric.DISTANCE))
+    }
+
+    @Test
+    fun splitsFormatWithTenths() {
+        assertEquals("1:52.4 /500m", Progress.format(112.4, MetricKind.SPLIT, WeightUnit.KG))
+    }
 }

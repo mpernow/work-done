@@ -85,7 +85,7 @@ fun ExerciseCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SetFields(block.exercise.trackingType, unit, block.draft, onDraftChange)
+                SetInputFields(block.exercise.trackingType, unit, block.draft, onDraftChange, Modifier.weight(1f))
                 FilledTonalIconButton(onClick = onAddSet, enabled = block.canAddSet) {
                     Icon(Icons.Filled.Check, contentDescription = "Log set")
                 }
@@ -94,28 +94,54 @@ fun ExerciseCard(
     }
 }
 
-/** The input fields a tracking type needs, sharing the row's width equally. */
+/** The input fields a tracking type needs, in one row, or two for intervals. */
 @Composable
-fun RowScope.SetFields(
+fun SetInputFields(
     type: TrackingType,
     unit: WeightUnit,
     draft: SetDraft,
     onDraftChange: (SetDraft) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val field = Modifier.weight(1f)
-    if (type == TrackingType.WEIGHT_REPS) {
-        NumberField(draft.weight, { onDraftChange(draft.copy(weight = it)) }, unit.label, decimal = true, field)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        when (type) {
+            TrackingType.WEIGHT_REPS -> FieldRow {
+                NumberField(draft.weight, { onDraftChange(draft.copy(weight = it)) }, unit.label, decimal = true, Modifier.weight(1f))
+                NumberField(draft.reps, { onDraftChange(draft.copy(reps = it)) }, "Reps", decimal = false, Modifier.weight(1f))
+            }
+            TrackingType.REPS -> FieldRow {
+                NumberField(draft.reps, { onDraftChange(draft.copy(reps = it)) }, "Reps", decimal = false, Modifier.weight(1f))
+            }
+            TrackingType.DURATION -> FieldRow {
+                NumberField(draft.minutes, { onDraftChange(draft.copy(minutes = it)) }, "Min", decimal = false, Modifier.weight(1f))
+                NumberField(draft.seconds, { onDraftChange(draft.copy(seconds = it)) }, "Sec", decimal = false, Modifier.weight(1f))
+            }
+            TrackingType.DISTANCE_TIME -> FieldRow {
+                NumberField(draft.distanceKm, { onDraftChange(draft.copy(distanceKm = it)) }, "km", decimal = true, Modifier.weight(1f))
+                NumberField(draft.minutes, { onDraftChange(draft.copy(minutes = it)) }, "Min", decimal = false, Modifier.weight(1f))
+                NumberField(draft.seconds, { onDraftChange(draft.copy(seconds = it)) }, "Sec", decimal = false, Modifier.weight(1f))
+            }
+            TrackingType.INTERVALS_TIME, TrackingType.INTERVALS_DISTANCE -> {
+                FieldRow {
+                    if (type == TrackingType.INTERVALS_TIME) {
+                        DigitTimeField(draft.workTime, { onDraftChange(draft.copy(workTime = it)) }, "Time", DigitFormat.MIN_SEC, Modifier.weight(1f))
+                    } else {
+                        NumberField(draft.distanceMeters, { onDraftChange(draft.copy(distanceMeters = it)) }, "Meters", decimal = false, Modifier.weight(1f))
+                    }
+                    DigitTimeField(draft.split, { onDraftChange(draft.copy(split = it)) }, "Split /500m", DigitFormat.SPLIT, Modifier.weight(1f))
+                }
+                FieldRow {
+                    DigitTimeField(draft.rest, { onDraftChange(draft.copy(rest = it)) }, "Rest", DigitFormat.MIN_SEC, Modifier.weight(1f))
+                    NumberField(draft.resistance, { onDraftChange(draft.copy(resistance = it)) }, "Resistance", decimal = false, Modifier.weight(1f))
+                }
+            }
+        }
     }
-    if (type == TrackingType.DISTANCE_TIME) {
-        NumberField(draft.distanceKm, { onDraftChange(draft.copy(distanceKm = it)) }, "km", decimal = true, field)
-    }
-    if (type == TrackingType.WEIGHT_REPS || type == TrackingType.REPS) {
-        NumberField(draft.reps, { onDraftChange(draft.copy(reps = it)) }, "Reps", decimal = false, field)
-    }
-    if (type == TrackingType.DURATION || type == TrackingType.DISTANCE_TIME) {
-        NumberField(draft.minutes, { onDraftChange(draft.copy(minutes = it)) }, "Min", decimal = false, field)
-        NumberField(draft.seconds, { onDraftChange(draft.copy(seconds = it)) }, "Sec", decimal = false, field)
-    }
+}
+
+@Composable
+private fun FieldRow(content: @Composable RowScope.() -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
 }
 
 @Composable
@@ -136,6 +162,32 @@ private fun NumberField(
     )
 }
 
+enum class DigitFormat(val placeholder: String, val maxDigits: Int) {
+    MIN_SEC("m:ss", 4),
+    SPLIT("m:ss.t", 4),
+}
+
+/** A time typed as digits only, with its separators added as you type; see [DigitTime]. */
+@Composable
+private fun DigitTimeField(
+    digits: String,
+    onDigitsChange: (String) -> Unit,
+    label: String,
+    format: DigitFormat,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = digits,
+        onValueChange = { typed -> onDigitsChange(typed.filter(Char::isDigit).take(format.maxDigits)) },
+        label = { Text(label) },
+        placeholder = { Text(format.placeholder) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        visualTransformation = DigitTimeTransformation(format),
+        modifier = modifier,
+    )
+}
+
 @Composable
 fun EditSetDialog(
     set: SetEntryEntity,
@@ -150,9 +202,7 @@ fun EditSetDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit set") },
         text = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SetFields(exercise.trackingType, unit, draft, onDraftChange = { draft = it })
-            }
+            SetInputFields(exercise.trackingType, unit, draft, onDraftChange = { draft = it })
         },
         confirmButton = {
             TextButton(onClick = { values?.let(onSave) }, enabled = values != null) { Text("Save") }

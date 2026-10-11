@@ -51,6 +51,23 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate3To4AddsEmptyIntervalFields() {
+        helper.createDatabase(DB_NAME, 3).use { db ->
+            db.execSQL("INSERT INTO exercises (id, name, trackingType) VALUES (1, 'Squat', 'WEIGHT_REPS')")
+            db.execSQL("INSERT INTO workouts (id, startedAt, notes) VALUES (1, 1759312800000, '')")
+            db.execSQL("INSERT INTO set_entries (workoutId, exerciseId, position, reps, weightKg) VALUES (1, 1, 0, 5, 100.0)")
+        }
+
+        helper.runMigrationsAndValidate(DB_NAME, 4, true).use { db ->
+            db.query("SELECT reps, restSeconds, splitSeconds, resistance FROM set_entries").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(5, cursor.getInt(0))
+                assertTrue(cursor.isNull(1) && cursor.isNull(2) && cursor.isNull(3))
+            }
+        }
+    }
+
     private companion object {
         const val DB_NAME = "migration-test"
     }

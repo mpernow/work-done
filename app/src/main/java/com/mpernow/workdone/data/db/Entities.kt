@@ -56,6 +56,10 @@ data class SetEntryEntity(
     val weightKg: Double? = null,
     val durationSeconds: Int? = null,
     val distanceMeters: Double? = null,
+    val restSeconds: Int? = null,
+    /** Seconds per 500 m. */
+    val splitSeconds: Double? = null,
+    val resistance: Int? = null,
 )
 
 fun SetEntryEntity.toValues() = SetValues(
@@ -63,4 +67,7 @@ fun SetEntryEntity.toValues() = SetValues(
     weightKg = weightKg,
     durationSeconds = durationSeconds,
     distanceMeters = distanceMeters,
+    restSeconds = restSeconds,
+    splitSeconds = splitSeconds,
+    resistance = resistance,
 )

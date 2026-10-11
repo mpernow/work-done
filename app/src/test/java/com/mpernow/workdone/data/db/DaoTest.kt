@@ -187,4 +187,17 @@ class DaoTest {
             exercises.observeByUsage().first().map { it.name },
         )
     }
+
+    @Test
+    fun intervalFieldsAreSavedWithTheSet() = runTest {
+        val rowing = exercises.insert(ExerciseEntity(name = "Rowing intervals", trackingType = TrackingType.INTERVALS_DISTANCE))
+        val workoutId = workouts.insert(WorkoutEntity(startedAt = Instant.now()))
+        sets.insertAtEnd(workoutId, rowing, reps = null, weightKg = null, durationSeconds = null, distanceMeters = 500.0,
+            restSeconds = 90, splitSeconds = 112.4, resistance = 6)
+
+        val saved = sets.lastForExercise(rowing)!!
+        assertEquals(90, saved.restSeconds)
+        assertEquals(112.4, saved.splitSeconds!!, 1e-9)
+        assertEquals(6, saved.resistance)
+    }
 }
