@@ -42,6 +42,9 @@ interface WorkoutDao {
     @Query("SELECT * FROM workouts WHERE id = :id")
     suspend fun get(id: Long): WorkoutEntity?
 
+    @Query("SELECT * FROM workouts WHERE finishedAt IS NOT NULL ORDER BY startedAt DESC")
+    fun observeFinished(): Flow<List<WorkoutEntity>>
+
     /** The workout in progress, if any. */
     @Query("SELECT * FROM workouts WHERE finishedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
     fun observeActive(): Flow<WorkoutEntity?>
@@ -86,6 +89,18 @@ interface SetEntryDao {
     )
     suspend fun lastForExercise(exerciseId: Long): SetEntryEntity?
 
+    /** One row per exercise in each workout, for the history list. */
+    @Query(
+        """
+        SELECT s.workoutId AS workoutId, e.name AS exerciseName,
+               COUNT(*) AS setCount, MIN(s.position) AS firstPosition
+        FROM set_entries s
+        JOIN exercises e ON e.id = s.exerciseId
+        GROUP BY s.workoutId, s.exerciseId
+        """
+    )
+    fun observeExerciseSummaries(): Flow<List<WorkoutExerciseSummary>>
+
     @Query("SELECT COUNT(*) FROM set_entries WHERE exerciseId = :exerciseId")
     suspend fun countForExercise(exerciseId: Long): Int
 
@@ -121,3 +136,11 @@ interface SetEntryDao {
     @Delete
     suspend fun delete(set: SetEntryEntity)
 }
+
+data class WorkoutExerciseSummary(
+    val workoutId: Long,
+    val exerciseName: String,
+    val setCount: Int,
+    /** Position of the exercise's first set, to list exercises in the order they were done. */
+    val firstPosition: Int,
+)

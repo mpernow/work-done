@@ -100,4 +100,37 @@ class DaoTest {
         val exerciseId = squat()
         assertEquals(exerciseId, exercises.findByName("SQUAT")?.id)
     }
+
+    @Test
+    fun historyListsOnlyFinishedWorkouts() = runTest {
+        val finished = workouts.insert(
+            WorkoutEntity(startedAt = Instant.parse("2026-10-01T10:00:00Z"), finishedAt = Instant.parse("2026-10-01T11:00:00Z")),
+        )
+        workouts.insert(WorkoutEntity(startedAt = Instant.parse("2026-10-02T10:00:00Z")))
+
+        assertEquals(listOf(finished), workouts.observeFinished().first().map { it.id })
+    }
+
+    @Test
+    fun exerciseSummariesCountSetsPerExerciseInEachWorkout() = runTest {
+        val squatId = squat()
+        val benchId = exercises.insert(
+            ExerciseEntity(name = "Bench press", category = ExerciseCategory.CHEST, trackingType = TrackingType.WEIGHT_REPS),
+        )
+        val workoutId = workouts.insert(WorkoutEntity(startedAt = Instant.now()))
+        addSet(workoutId, benchId, 60.0)
+        addSet(workoutId, squatId, 100.0)
+        addSet(workoutId, squatId, 100.0)
+        addSet(workoutId, benchId, 60.0)
+
+        val summaries = sets.observeExerciseSummaries().first().sortedBy { it.firstPosition }
+
+        assertEquals(
+            listOf(
+                WorkoutExerciseSummary(workoutId, "Bench press", setCount = 2, firstPosition = 0),
+                WorkoutExerciseSummary(workoutId, "Squat", setCount = 2, firstPosition = 1),
+            ),
+            summaries,
+        )
+    }
 }

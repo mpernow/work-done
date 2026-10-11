@@ -4,6 +4,7 @@ import com.mpernow.workdone.data.db.SetEntryDao
 import com.mpernow.workdone.data.db.SetEntryEntity
 import com.mpernow.workdone.data.db.WorkoutDao
 import com.mpernow.workdone.data.db.WorkoutEntity
+import com.mpernow.workdone.data.db.WorkoutExerciseSummary
 import com.mpernow.workdone.domain.SetValues
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
@@ -18,6 +19,10 @@ class WorkoutRepository(
 
     fun observeActiveWorkout(): Flow<WorkoutEntity?> = workoutDao.observeActive()
 
+    fun observeFinishedWorkouts(): Flow<List<WorkoutEntity>> = workoutDao.observeFinished()
+
+    fun observeExerciseSummaries(): Flow<List<WorkoutExerciseSummary>> = setEntryDao.observeExerciseSummaries()
+
     fun observeSets(workoutId: Long): Flow<List<SetEntryEntity>> = setEntryDao.observeForWorkout(workoutId)
 
     fun observeSetsForExercise(exerciseId: Long): Flow<List<SetEntryEntity>> =
@@ -30,14 +35,16 @@ class WorkoutRepository(
         workoutDao.getActive()?.id ?: workoutDao.insert(WorkoutEntity(startedAt = now))
 
     /** Marks the workout finished. A workout without any sets is deleted instead. */
-    suspend fun finishWorkout(workoutId: Long, notes: String, now: Instant) {
+    suspend fun finishWorkout(workoutId: Long, notes: String, finishedAt: Instant) {
         val workout = workoutDao.get(workoutId) ?: return
         if (setEntryDao.countForWorkout(workoutId) == 0) {
             workoutDao.delete(workout)
         } else {
-            workoutDao.update(workout.copy(finishedAt = now, notes = notes.trim()))
+            workoutDao.update(workout.copy(finishedAt = finishedAt, notes = notes.trim()))
         }
     }
+
+    suspend fun getWorkout(id: Long): WorkoutEntity? = workoutDao.get(id)
 
     suspend fun saveWorkout(workout: WorkoutEntity): Long =
         if (workout.id == 0L) workoutDao.insert(workout) else workout.id.also { workoutDao.update(workout) }

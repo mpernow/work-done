@@ -10,6 +10,7 @@ import com.mpernow.workdone.ui.exercises.ExerciseDetailScreen
 import com.mpernow.workdone.ui.exercises.ExerciseEditScreen
 import com.mpernow.workdone.ui.exercises.ExercisesScreen
 import com.mpernow.workdone.ui.history.HistoryScreen
+import com.mpernow.workdone.ui.history.WorkoutDetailScreen
 import com.mpernow.workdone.ui.log.LogWorkoutScreen
 import com.mpernow.workdone.ui.settings.SettingsScreen
 import com.mpernow.workdone.ui.stats.StatsScreen
@@ -20,7 +21,16 @@ fun WorkDoneNavHost(navController: NavHostController, modifier: Modifier = Modif
         composable<LogRoute> {
             LogWorkoutScreen(onCreateExercise = { name -> navController.navigate(ExerciseEditRoute(initialName = name)) })
         }
-        composable<HistoryRoute> { HistoryScreen() }
+        composable<HistoryRoute> {
+            HistoryScreen(onWorkoutClick = { id -> navController.navigate(WorkoutDetailRoute(id)) })
+        }
+        composable<WorkoutDetailRoute> { entry ->
+            WorkoutDetailScreen(
+                workoutId = entry.toRoute<WorkoutDetailRoute>().workoutId,
+                onNavigateUp = { navController.navigateUp() },
+                onCreateExercise = { name -> navController.navigate(ExerciseEditRoute(initialName = name)) },
+            )
+        }
         composable<ExercisesRoute> {
             ExercisesScreen(
                 onExerciseClick = { id -> navController.navigate(ExerciseDetailRoute(id)) },

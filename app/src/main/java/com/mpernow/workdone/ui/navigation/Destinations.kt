@@ -16,6 +16,7 @@ import kotlinx.serialization.Serializable
 @Serializable object StatsRoute
 @Serializable object SettingsRoute
 @Serializable data class ExerciseDetailRoute(val exerciseId: Long)
+@Serializable data class WorkoutDetailRoute(val workoutId: Long)
 
 /** Creates a new exercise when [exerciseId] is 0, optionally starting from [initialName]. */
 @Serializable data class ExerciseEditRoute(val exerciseId: Long = 0, val initialName: String = "")
