@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import com.mpernow.workdone.data.backup.BackupManager
 import com.mpernow.workdone.data.db.AppDatabase
+import com.mpernow.workdone.data.ocr.PhotoTextReader
 import com.mpernow.workdone.data.repository.ExerciseRepository
 import com.mpernow.workdone.data.repository.WorkoutRepository
 import com.mpernow.workdone.data.settings.SettingsRepository
@@ -19,6 +20,7 @@ class AppContainer(context: Context) {
     val workoutRepository = WorkoutRepository(database.workoutDao(), database.setEntryDao())
     val settingsRepository = SettingsRepository(context)
     val backupManager = BackupManager(context, database, restartApp = { restartApp(context) })
+    val photoTextReader = PhotoTextReader(context)
 }
 
 /** Relaunches the app in a fresh process, so everything reopens the restored database. */

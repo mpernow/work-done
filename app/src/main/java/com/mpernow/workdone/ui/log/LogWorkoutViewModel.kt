@@ -13,7 +13,7 @@ import com.mpernow.workdone.domain.SetDraft
 import com.mpernow.workdone.domain.SetValues
 import com.mpernow.workdone.domain.WeightUnit
 import com.mpernow.workdone.domain.WorkoutDates
-import com.mpernow.workdone.domain.isIntervals
+import com.mpernow.workdone.domain.usesSplits
 import com.mpernow.workdone.ui.workout.ExerciseBlock
 import com.mpernow.workdone.ui.workout.WorkoutSetsEditor
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -81,15 +81,15 @@ class LogWorkoutViewModel(
 
     fun updateDraft(exerciseId: Long, draft: SetDraft) = editor.updateDraft(exerciseId, draft)
 
-    /** Logs the exercise's input as a set and starts the rest timer, except for backdated workouts and intervals. */
+    /** Logs the exercise's input as a set and starts the rest timer, except for backdated workouts and rowing-machine types. */
     fun addSet(exerciseId: Long) {
         val state = uiState.value as? LogUiState.Active ?: return
         val block = state.blocks.firstOrNull { it.exercise.id == exerciseId } ?: return
         viewModelScope.launch {
             if (!editor.addSet(state.workout.id, block, state.weightUnit)) return@launch
             if (WorkoutDates.isBackdated(state.workout.startedAt, Instant.now())) return@launch
-            // Interval machines time their own rest.
-            if (block.exercise.trackingType.isIntervals) return@launch
+            // Rowing machines time their own rest.
+            if (block.exercise.trackingType.usesSplits) return@launch
             val restSeconds = settingsRepository.restTimerSeconds.first()
             if (restSeconds > 0) _restEndsAt.value = SystemClock.elapsedRealtime() + restSeconds * 1000L
         }

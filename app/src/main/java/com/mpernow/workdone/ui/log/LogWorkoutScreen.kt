@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -56,6 +57,7 @@ import java.time.Instant
 @Composable
 fun LogWorkoutScreen(
     onCreateExercise: (String) -> Unit,
+    onAddFromPhoto: (workoutId: Long) -> Unit,
     viewModel: LogWorkoutViewModel = viewModel(
         factory = appViewModelFactory {
             LogWorkoutViewModel(it.workoutRepository, it.exerciseRepository, it.settingsRepository)
@@ -66,7 +68,7 @@ fun LogWorkoutScreen(
     when (val current = state) {
         LogUiState.Loading -> AppScaffold(title = "Workout") {}
         LogUiState.Idle -> IdleContent(onStart = viewModel::startWorkout)
-        is LogUiState.Active -> ActiveWorkout(current, viewModel, onCreateExercise)
+        is LogUiState.Active -> ActiveWorkout(current, viewModel, onCreateExercise, onAddFromPhoto)
     }
 }
 
@@ -98,6 +100,7 @@ private fun ActiveWorkout(
     state: LogUiState.Active,
     viewModel: LogWorkoutViewModel,
     onCreateExercise: (String) -> Unit,
+    onAddFromPhoto: (workoutId: Long) -> Unit,
 ) {
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
     val restEndsAt by viewModel.restEndsAt.collectAsStateWithLifecycle()
@@ -110,6 +113,9 @@ private fun ActiveWorkout(
     AppScaffold(
         title = "Workout",
         actions = {
+            IconButton(onClick = { onAddFromPhoto(state.workout.id) }) {
+                Icon(Icons.Filled.PhotoCamera, contentDescription = "Add from rowing machine photo")
+            }
             IconButton(onClick = { showDiscard = true }) {
                 Icon(Icons.Filled.Delete, contentDescription = "Discard workout")
             }

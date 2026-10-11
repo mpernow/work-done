@@ -83,6 +83,8 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.vico.compose.m3)
+    // On-device text recognition with the model bundled in the app, so it works offline.
+    implementation(libs.mlkit.text.recognition)
 
     implementation(libs.kotlinx.serialization.json)
 

@@ -70,6 +70,7 @@ class WorkoutRepository(
             restSeconds = values.restSeconds,
             splitSeconds = values.splitSeconds,
             resistance = values.resistance,
+            strokeRate = values.strokeRate,
         )
 
     suspend fun saveSet(set: SetEntryEntity): Long =

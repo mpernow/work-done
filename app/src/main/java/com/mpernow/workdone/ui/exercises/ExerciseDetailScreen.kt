@@ -124,7 +124,8 @@ class ExerciseDetailViewModel(
             unit = unit,
             points = Progress.points(inRange, metric).map { it.copy(value = Progress.toDisplay(it.value, metric.kind, unit)) },
             records = metrics.mapNotNull { m ->
-                Progress.best(Progress.points(sessions, m), m)?.let { RecordUi(m.recordLabel, display(it.value, m), it.date, it.workoutId) }
+                val label = m.recordLabel ?: return@mapNotNull null
+                Progress.best(Progress.points(sessions, m), m)?.let { RecordUi(label, display(it.value, m), it.date, it.workoutId) }
             },
             sessions = inRange.asReversed().map { session ->
                 SessionRow(
@@ -243,7 +244,7 @@ private fun ProgressChartCard(ui: ExerciseProgressUi, onSelectMetric: (ProgressM
                 },
                 axisSteps = when (metric.kind) {
                     MetricKind.DURATION, MetricKind.PACE, MetricKind.SPLIT -> AxisSteps.TIME
-                    MetricKind.REPS -> AxisSteps.INTEGER
+                    MetricKind.REPS, MetricKind.STROKE_RATE -> AxisSteps.INTEGER
                     MetricKind.WEIGHT, MetricKind.DISTANCE -> AxisSteps.DECIMAL
                 },
                 surfaceColor = CardDefaults.cardColors().containerColor,

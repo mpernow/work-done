@@ -97,4 +97,15 @@ class ProgressTest {
     fun splitsFormatWithTenths() {
         assertEquals("1:52.4 /500m", Progress.format(112.4, MetricKind.SPLIT, WeightUnit.KG))
     }
+
+    @Test
+    fun strokeRateIsWeightedByTime() {
+        // 500 m at 2:00 (120 s) at 20 s/m and 500 m at 1:30 (90 s) at 30 s/m: (20×120 + 30×90) / 210.
+        val sets = listOf(
+            SetValues(distanceMeters = 500.0, splitSeconds = 120.0, strokeRate = 20),
+            SetValues(distanceMeters = 500.0, splitSeconds = 90.0, strokeRate = 30),
+        )
+        assertEquals(5100.0 / 210, Progress.sessionValue(sets, ProgressMetric.STROKE_RATE)!!, 1e-9)
+        assertNull(ProgressMetric.STROKE_RATE.recordLabel)
+    }
 }

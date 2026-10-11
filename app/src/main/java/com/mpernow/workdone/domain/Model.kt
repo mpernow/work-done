@@ -12,11 +12,18 @@ enum class TrackingType(val label: String) {
 
     /** One set per interval of fixed distance, e.g. on a rowing machine. */
     INTERVALS_DISTANCE("Intervals (distance)"),
+
+    /** A single continuous piece, one set per split (e.g. each 500 m of a 2000 m row). */
+    DISTANCE_SPLITS("Distance (splits)"),
 }
 
-/** Interval types: one set per interval, with a 500 m split and optional rest and resistance. */
-val TrackingType.isIntervals: Boolean
-    get() = this == TrackingType.INTERVALS_TIME || this == TrackingType.INTERVALS_DISTANCE
+/**
+ * Rowing-machine style types: one set per interval or split, each with a 500 m split, stroke
+ * rate and resistance. The machine keeps time, so the app's rest timer stays off for these.
+ */
+val TrackingType.usesSplits: Boolean
+    get() = this == TrackingType.INTERVALS_TIME || this == TrackingType.INTERVALS_DISTANCE ||
+        this == TrackingType.DISTANCE_SPLITS
 
 enum class WeightUnit(val label: String) { KG("kg"), LB("lb") }
 
@@ -32,6 +39,8 @@ data class SetValues(
     val splitSeconds: Double? = null,
     /** The machine's resistance or damper setting. */
     val resistance: Int? = null,
+    /** Strokes per minute. */
+    val strokeRate: Int? = null,
 ) {
     /** Time worked: as logged, or worked out from the distance and split. */
     val workSeconds: Double?

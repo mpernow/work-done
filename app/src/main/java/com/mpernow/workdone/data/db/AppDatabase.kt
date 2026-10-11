@@ -13,11 +13,12 @@ import com.mpernow.workdone.domain.TrackingType
 
 @Database(
     entities = [ExerciseEntity::class, WorkoutEntity::class, SetEntryEntity::class],
-    version = 4,
+    version = 5,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), // workouts.finishedAt
         AutoMigration(from = 2, to = 3, spec = DropExerciseCategory::class),
         AutoMigration(from = 3, to = 4), // set_entries.restSeconds, splitSeconds, resistance
+        AutoMigration(from = 4, to = 5), // set_entries.strokeRate
     ],
 )
 @TypeConverters(Converters::class)

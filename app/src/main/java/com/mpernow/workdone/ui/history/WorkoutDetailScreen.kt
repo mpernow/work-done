@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
@@ -149,6 +150,7 @@ fun WorkoutDetailScreen(
     workoutId: Long,
     onNavigateUp: () -> Unit,
     onCreateExercise: (String) -> Unit,
+    onAddFromPhoto: () -> Unit,
     viewModel: WorkoutDetailViewModel = viewModel(
         factory = appViewModelFactory {
             WorkoutDetailViewModel(it.workoutRepository, it.exerciseRepository, it.settingsRepository, workoutId)
@@ -162,7 +164,7 @@ fun WorkoutDetailScreen(
     when (val current = state) {
         WorkoutDetailUiState.Loading, WorkoutDetailUiState.Deleted ->
             AppScaffold(title = "Workout", onNavigateUp = onNavigateUp) {}
-        is WorkoutDetailUiState.Loaded -> WorkoutDetail(current, viewModel, onNavigateUp, onCreateExercise)
+        is WorkoutDetailUiState.Loaded -> WorkoutDetail(current, viewModel, onNavigateUp, onCreateExercise, onAddFromPhoto)
     }
 }
 
@@ -172,6 +174,7 @@ private fun WorkoutDetail(
     viewModel: WorkoutDetailViewModel,
     onNavigateUp: () -> Unit,
     onCreateExercise: (String) -> Unit,
+    onAddFromPhoto: () -> Unit,
 ) {
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
     val workout = state.workout
@@ -185,6 +188,9 @@ private fun WorkoutDetail(
         title = formatDate(workout.startedAt),
         onNavigateUp = onNavigateUp,
         actions = {
+            IconButton(onClick = onAddFromPhoto) {
+                Icon(Icons.Filled.PhotoCamera, contentDescription = "Add from rowing machine photo")
+            }
             IconButton(onClick = { showDelete = true }) {
                 Icon(Icons.Filled.Delete, contentDescription = "Delete workout")
             }

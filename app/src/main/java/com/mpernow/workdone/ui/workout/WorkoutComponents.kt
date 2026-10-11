@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -21,6 +22,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -37,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.mpernow.workdone.data.db.ExerciseEntity
@@ -45,8 +48,10 @@ import com.mpernow.workdone.data.db.toValues
 import com.mpernow.workdone.domain.SetDraft
 import com.mpernow.workdone.domain.SetInput
 import com.mpernow.workdone.domain.SetValues
+import com.mpernow.workdone.domain.SplitsSummary
 import com.mpernow.workdone.domain.TrackingType
 import com.mpernow.workdone.domain.WeightUnit
+import com.mpernow.workdone.domain.usesSplits
 
 /** An exercise's sets plus an input row for the next one. Tapping a set opens it for editing. */
 @Composable
@@ -80,6 +85,13 @@ fun ExerciseCard(
                     }
                 }
             }
+            if (block.exercise.trackingType.usesSplits) {
+                SplitsSummary.of(block.sets.map { it.toValues() })?.let { summary ->
+                    // Intervals leave out the rest, so their total is the time spent working.
+                    val totalLabel = if (block.exercise.trackingType == TrackingType.DISTANCE_SPLITS) "Total" else "Work"
+                    SplitsTotals(summary, totalLabel)
+                }
+            }
             Row(
                 modifier = Modifier.padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -91,6 +103,29 @@ fun ExerciseCard(
                 }
             }
         }
+    }
+}
+
+/** Totals and averages under the splits or intervals, in the same columns as the set rows. */
+@Composable
+private fun SplitsTotals(summary: SplitsSummary, totalLabel: String) {
+    Column(Modifier.padding(top = 4.dp, bottom = 4.dp, end = 48.dp)) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(bottom = 4.dp))
+        SummaryLine(totalLabel, summary.totalText)
+        SummaryLine("Average", summary.averageText)
+    }
+}
+
+@Composable
+private fun SummaryLine(label: String, value: String) {
+    Row {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(72.dp),
+        )
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -121,18 +156,23 @@ fun SetInputFields(
                 NumberField(draft.minutes, { onDraftChange(draft.copy(minutes = it)) }, "Min", decimal = false, Modifier.weight(1f))
                 NumberField(draft.seconds, { onDraftChange(draft.copy(seconds = it)) }, "Sec", decimal = false, Modifier.weight(1f))
             }
-            TrackingType.INTERVALS_TIME, TrackingType.INTERVALS_DISTANCE -> {
+            TrackingType.INTERVALS_TIME, TrackingType.INTERVALS_DISTANCE, TrackingType.DISTANCE_SPLITS -> {
                 FieldRow {
                     if (type == TrackingType.INTERVALS_TIME) {
                         DigitTimeField(draft.workTime, { onDraftChange(draft.copy(workTime = it)) }, "Time", DigitFormat.MIN_SEC, Modifier.weight(1f))
                     } else {
                         NumberField(draft.distanceMeters, { onDraftChange(draft.copy(distanceMeters = it)) }, "Meters", decimal = false, Modifier.weight(1f))
                     }
-                    DigitTimeField(draft.split, { onDraftChange(draft.copy(split = it)) }, "Split /500m", DigitFormat.SPLIT, Modifier.weight(1f))
+                    DigitTimeField(draft.split, { onDraftChange(draft.copy(split = it)) }, "Split", DigitFormat.SPLIT, Modifier.weight(1f))
+                    NumberField(draft.strokeRate, { onDraftChange(draft.copy(strokeRate = it)) }, "s/m", decimal = false, Modifier.weight(1f))
                 }
                 FieldRow {
-                    DigitTimeField(draft.rest, { onDraftChange(draft.copy(rest = it)) }, "Rest", DigitFormat.MIN_SEC, Modifier.weight(1f))
+                    // A continuous piece has no rest between splits; keep the resistance field half width.
+                    if (type != TrackingType.DISTANCE_SPLITS) {
+                        DigitTimeField(draft.rest, { onDraftChange(draft.copy(rest = it)) }, "Rest", DigitFormat.MIN_SEC, Modifier.weight(1f))
+                    }
                     NumberField(draft.resistance, { onDraftChange(draft.copy(resistance = it)) }, "Resistance", decimal = false, Modifier.weight(1f))
+                    if (type == TrackingType.DISTANCE_SPLITS) Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -145,7 +185,7 @@ private fun FieldRow(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-private fun NumberField(
+internal fun NumberField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
@@ -169,7 +209,7 @@ enum class DigitFormat(val placeholder: String, val maxDigits: Int) {
 
 /** A time typed as digits only, with its separators added as you type; see [DigitTime]. */
 @Composable
-private fun DigitTimeField(
+internal fun DigitTimeField(
     digits: String,
     onDigitsChange: (String) -> Unit,
     label: String,

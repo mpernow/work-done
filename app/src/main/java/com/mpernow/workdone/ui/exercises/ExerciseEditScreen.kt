@@ -65,9 +65,15 @@ class ExerciseEditViewModel(
     private val exerciseRepository: ExerciseRepository,
     private val exerciseId: Long,
     initialName: String,
+    initialTrackingType: TrackingType?,
 ) : ViewModel() {
     private val _state = MutableStateFlow(
-        ExerciseEditUiState(name = initialName, isNew = exerciseId == 0L, loading = exerciseId != 0L),
+        ExerciseEditUiState(
+            name = initialName,
+            trackingType = initialTrackingType ?: TrackingType.WEIGHT_REPS,
+            isNew = exerciseId == 0L,
+            loading = exerciseId != 0L,
+        ),
     )
     val state: StateFlow<ExerciseEditUiState> = _state.asStateFlow()
 
@@ -124,11 +130,12 @@ class ExerciseEditViewModel(
 fun ExerciseEditScreen(
     exerciseId: Long,
     initialName: String,
+    initialTrackingType: TrackingType?,
     onSaved: () -> Unit,
     onDeleted: () -> Unit,
     onNavigateUp: () -> Unit,
     viewModel: ExerciseEditViewModel = viewModel(
-        factory = appViewModelFactory { ExerciseEditViewModel(it.exerciseRepository, exerciseId, initialName) },
+        factory = appViewModelFactory { ExerciseEditViewModel(it.exerciseRepository, exerciseId, initialName, initialTrackingType) },
     ),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()

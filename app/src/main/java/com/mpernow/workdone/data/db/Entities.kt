@@ -60,6 +60,7 @@ data class SetEntryEntity(
     /** Seconds per 500 m. */
     val splitSeconds: Double? = null,
     val resistance: Int? = null,
+    val strokeRate: Int? = null,
 )
 
 fun SetEntryEntity.toValues() = SetValues(
@@ -70,4 +71,5 @@ fun SetEntryEntity.toValues() = SetValues(
     restSeconds = restSeconds,
     splitSeconds = splitSeconds,
     resistance = resistance,
+    strokeRate = strokeRate,
 )

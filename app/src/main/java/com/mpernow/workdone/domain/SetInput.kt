@@ -16,6 +16,7 @@ data class SetDraft(
     val split: String = "",
     val rest: String = "",
     val resistance: String = "",
+    val strokeRate: String = "",
 )
 
 /** Converts between typed set input, stored [SetValues] and display text. */
@@ -48,15 +49,32 @@ object SetInput {
             val meters = draft.distanceMeters.trim().toIntOrNull()?.takeIf { it > 0 }
             if (meters == null) null else parseInterval(draft)?.copy(distanceMeters = meters.toDouble())
         }
+        TrackingType.DISTANCE_SPLITS -> {
+            val meters = draft.distanceMeters.trim().toIntOrNull()?.takeIf { it > 0 }
+            // A continuous piece has no rest between its splits.
+            if (meters == null) null else parseInterval(draft.copy(rest = ""))?.copy(distanceMeters = meters.toDouble())
+        }
     }
 
-    /** The split (required) plus rest and resistance (optional, but must be valid if given). */
+    /** The split (required) plus rest, resistance and stroke rate (optional, but must be valid if given). */
     private fun parseInterval(draft: SetDraft): SetValues? {
         val split = DigitTime.parseSplit(draft.split)?.takeIf { it > 0 } ?: return null
         val rest = if (draft.rest.isBlank()) null else DigitTime.parseMinSec(draft.rest) ?: return null
-        val resistance = if (draft.resistance.isBlank()) null else draft.resistance.trim().toIntOrNull()?.takeIf { it >= 0 } ?: return null
-        return SetValues(splitSeconds = split, restSeconds = rest, resistance = resistance)
+        val resistance = optionalWholeNumber(draft.resistance) ?: return null
+        val strokeRate = optionalWholeNumber(draft.strokeRate) ?: return null
+        return SetValues(
+            splitSeconds = split,
+            restSeconds = rest,
+            resistance = resistance.value,
+            strokeRate = strokeRate.value,
+        )
     }
+
+    private class Optional<T>(val value: T?)
+
+    /** Empty is a valid "not given"; anything else must be a whole number of at least 0. */
+    private fun optionalWholeNumber(text: String): Optional<Int>? =
+        if (text.isBlank()) Optional(null) else text.trim().toIntOrNull()?.takeIf { it >= 0 }?.let { Optional(it) }
 
     /** Turns a stored set back into input text, used to pre-fill the next set. */
     fun draftFrom(values: SetValues, unit: WeightUnit): SetDraft = SetDraft(
@@ -70,6 +88,7 @@ object SetInput {
         split = values.splitSeconds?.let(DigitTime::splitDigits).orEmpty(),
         rest = values.restSeconds?.let(DigitTime::minSecDigits).orEmpty(),
         resistance = values.resistance?.toString().orEmpty(),
+        strokeRate = values.strokeRate?.toString().orEmpty(),
     )
 
     /** One-line summary of a set, such as "80 kg × 8" or "5 km in 25:00". */
@@ -80,13 +99,14 @@ object SetInput {
         TrackingType.DURATION -> formatDuration(values.durationSeconds ?: 0)
         TrackingType.DISTANCE_TIME ->
             "${formatDecimal((values.distanceMeters ?: 0.0) / 1000)} km in ${formatDuration(values.durationSeconds ?: 0)}"
-        TrackingType.INTERVALS_TIME, TrackingType.INTERVALS_DISTANCE -> listOfNotNull(
+        TrackingType.INTERVALS_TIME, TrackingType.INTERVALS_DISTANCE, TrackingType.DISTANCE_SPLITS -> listOfNotNull(
             if (type == TrackingType.INTERVALS_TIME) {
                 formatDuration(values.durationSeconds ?: 0)
             } else {
                 "${Math.round(values.distanceMeters ?: 0.0)} m"
             },
             values.splitSeconds?.let { "${DigitTime.formatSplit(it)} /500m" },
+            values.strokeRate?.let { "$it s/m" },
             values.restSeconds?.let { "rest ${formatDuration(it)}" },
             values.resistance?.let { "resistance $it" },
         ).joinToString(" · ")

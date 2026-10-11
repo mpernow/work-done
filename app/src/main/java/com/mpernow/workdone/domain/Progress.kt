@@ -4,7 +4,7 @@ import java.time.LocalDate
 import kotlin.math.roundToInt
 
 /** How a metric's values are measured, which decides how they're converted and formatted. */
-enum class MetricKind { WEIGHT, REPS, DURATION, DISTANCE, PACE, SPLIT }
+enum class MetricKind { WEIGHT, REPS, DURATION, DISTANCE, PACE, SPLIT, STROKE_RATE }
 
 /**
  * A per-workout measure of an exercise. Values are in storage units: kilograms, reps,
@@ -12,7 +12,8 @@ enum class MetricKind { WEIGHT, REPS, DURATION, DISTANCE, PACE, SPLIT }
  */
 enum class ProgressMetric(
     val label: String,
-    val recordLabel: String,
+    /** Title of the metric's personal record, or null if it has none. */
+    val recordLabel: String?,
     val kind: MetricKind,
     val lowerIsBetter: Boolean = false,
 ) {
@@ -26,7 +27,9 @@ enum class ProgressMetric(
     DISTANCE("Distance", "Longest distance", MetricKind.DISTANCE),
     PACE("Pace", "Fastest pace", MetricKind.PACE, lowerIsBetter = true),
     AVERAGE_SPLIT("Avg split", "Best average split", MetricKind.SPLIT, lowerIsBetter = true),
-    BEST_SPLIT("Best interval", "Fastest interval", MetricKind.SPLIT, lowerIsBetter = true),
+    BEST_SPLIT("Best split", "Fastest split", MetricKind.SPLIT, lowerIsBetter = true),
+    /** Higher isn't better for stroke rate, so it has no personal record. */
+    STROKE_RATE("Rate", null, MetricKind.STROKE_RATE),
 }
 
 /** All sets of one exercise in one workout. */
@@ -40,8 +43,8 @@ object Progress {
         TrackingType.REPS -> listOf(ProgressMetric.BEST_SET_REPS, ProgressMetric.TOTAL_REPS)
         TrackingType.DURATION -> listOf(ProgressMetric.LONGEST_SET, ProgressMetric.TOTAL_TIME)
         TrackingType.DISTANCE_TIME -> listOf(ProgressMetric.DISTANCE, ProgressMetric.PACE, ProgressMetric.TOTAL_TIME)
-        TrackingType.INTERVALS_TIME, TrackingType.INTERVALS_DISTANCE ->
-            listOf(ProgressMetric.AVERAGE_SPLIT, ProgressMetric.BEST_SPLIT, ProgressMetric.DISTANCE)
+        TrackingType.INTERVALS_TIME, TrackingType.INTERVALS_DISTANCE, TrackingType.DISTANCE_SPLITS ->
+            listOf(ProgressMetric.AVERAGE_SPLIT, ProgressMetric.BEST_SPLIT, ProgressMetric.DISTANCE, ProgressMetric.STROKE_RATE)
     }
 
     /** The metric's value for one workout, or null if none of its sets have the needed fields. */
@@ -69,6 +72,12 @@ object Progress {
             if (meters > 0) intervals.sumOf { it.workSeconds!! } / meters * 500 else null
         }
         ProgressMetric.BEST_SPLIT -> sets.mapNotNull { it.splitSeconds }.minOrNull()
+        // Weighted by time, so a long split counts for more than a short one.
+        ProgressMetric.STROKE_RATE -> {
+            val rated = sets.filter { it.strokeRate != null && (it.workSeconds ?: 0.0) > 0 }
+            val seconds = rated.sumOf { it.workSeconds!! }
+            if (seconds > 0) rated.sumOf { it.strokeRate!! * it.workSeconds!! } / seconds else null
+        }
     }
 
     /** One point per workout, in the order of [sessions]. */
@@ -85,7 +94,7 @@ object Progress {
     fun toDisplay(value: Double, kind: MetricKind, unit: WeightUnit): Double = when (kind) {
         MetricKind.WEIGHT -> SetInput.fromKg(value, unit)
         MetricKind.DISTANCE -> value / 1000
-        MetricKind.REPS, MetricKind.DURATION, MetricKind.PACE, MetricKind.SPLIT -> value
+        MetricKind.REPS, MetricKind.DURATION, MetricKind.PACE, MetricKind.SPLIT, MetricKind.STROKE_RATE -> value
     }
 
     /** Formats a display value with its unit: "102.5 kg", "12 reps", "25:30", "5.2 km", "4:55 /km". */
@@ -96,6 +105,7 @@ object Progress {
         MetricKind.DISTANCE -> "${SetInput.formatDecimal(displayValue)} km"
         MetricKind.PACE -> "${SetInput.formatDuration(displayValue.roundToInt())} /km"
         MetricKind.SPLIT -> "${DigitTime.formatSplit(displayValue)} /500m"
+        MetricKind.STROKE_RATE -> "${SetInput.formatDecimal(Math.round(displayValue * 10) / 10.0)} s/m"
     }
 
     /** The unit the axis is in, for a chart title: "kg", "km", "min/km"; null for plain counts. */
@@ -105,13 +115,14 @@ object Progress {
         MetricKind.PACE -> "min/km"
         MetricKind.DURATION -> "min:sec"
         MetricKind.SPLIT -> "per 500 m"
+        MetricKind.STROKE_RATE -> "s/m"
         MetricKind.REPS -> null
     }
 
     /** Short axis labels, without units: "1.2K", "12", "25:30". */
     fun formatAxis(displayValue: Double, kind: MetricKind): String = when (kind) {
         MetricKind.DURATION, MetricKind.PACE, MetricKind.SPLIT -> SetInput.formatDuration(displayValue.roundToInt())
-        MetricKind.REPS -> displayValue.roundToInt().toString()
+        MetricKind.REPS, MetricKind.STROKE_RATE -> displayValue.roundToInt().toString()
         MetricKind.WEIGHT, MetricKind.DISTANCE -> compactNumber(displayValue)
     }
 

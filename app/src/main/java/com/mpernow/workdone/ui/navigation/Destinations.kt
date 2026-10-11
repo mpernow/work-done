@@ -18,8 +18,18 @@ import kotlinx.serialization.Serializable
 @Serializable data class ExerciseDetailRoute(val exerciseId: Long)
 @Serializable data class WorkoutDetailRoute(val workoutId: Long)
 
-/** Creates a new exercise when [exerciseId] is 0, optionally starting from [initialName]. */
-@Serializable data class ExerciseEditRoute(val exerciseId: Long = 0, val initialName: String = "")
+/**
+ * Creates a new exercise when [exerciseId] is 0, optionally starting from [initialName] and
+ * [initialTrackingType] (a [com.mpernow.workdone.domain.TrackingType] name).
+ */
+@Serializable data class ExerciseEditRoute(
+    val exerciseId: Long = 0,
+    val initialName: String = "",
+    val initialTrackingType: String? = null,
+)
+
+/** Adds sets to a workout from a photo of a rowing machine's results screen. */
+@Serializable data class RowingPhotoRoute(val workoutId: Long)
 
 /** The tabs shown in the bottom navigation bar, in order. */
 enum class TopLevelDestination(val route: Any, val label: String, val icon: ImageVector) {

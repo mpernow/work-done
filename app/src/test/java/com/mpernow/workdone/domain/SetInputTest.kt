@@ -121,4 +121,23 @@ class SetInputTest {
             SetInput.describe(SetValues(durationSeconds = 120, splitSeconds = 112.4), TrackingType.INTERVALS_TIME, WeightUnit.KG),
         )
     }
+
+    @Test
+    fun distanceSplitsTakeStrokeRateAndIgnoreRest() {
+        val draft = SetDraft(distanceMeters = "500", split = "1494", strokeRate = "28", rest = "200")
+        assertEquals(
+            SetValues(distanceMeters = 500.0, splitSeconds = 109.4, strokeRate = 28),
+            SetInput.parse(draft, TrackingType.DISTANCE_SPLITS, WeightUnit.KG),
+        )
+        assertEquals(
+            "500 m · 1:49.4 /500m · 28 s/m",
+            SetInput.describe(SetValues(distanceMeters = 500.0, splitSeconds = 109.4, strokeRate = 28), TrackingType.DISTANCE_SPLITS, WeightUnit.KG),
+        )
+    }
+
+    @Test
+    fun aMistypedStrokeRateBlocksTheSet() {
+        val draft = SetDraft(distanceMeters = "500", split = "1494", strokeRate = "2x")
+        assertNull(SetInput.parse(draft, TrackingType.INTERVALS_DISTANCE, WeightUnit.KG))
+    }
 }

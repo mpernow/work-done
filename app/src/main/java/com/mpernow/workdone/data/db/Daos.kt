@@ -159,12 +159,12 @@ interface SetEntryDao {
         """
         INSERT INTO set_entries (
             workoutId, exerciseId, position, reps, weightKg, durationSeconds, distanceMeters,
-            restSeconds, splitSeconds, resistance
+            restSeconds, splitSeconds, resistance, strokeRate
         )
         VALUES (
             :workoutId, :exerciseId,
             (SELECT COALESCE(MAX(position), -1) + 1 FROM set_entries WHERE workoutId = :workoutId),
-            :reps, :weightKg, :durationSeconds, :distanceMeters, :restSeconds, :splitSeconds, :resistance
+            :reps, :weightKg, :durationSeconds, :distanceMeters, :restSeconds, :splitSeconds, :resistance, :strokeRate
         )
         """
     )
@@ -178,6 +178,7 @@ interface SetEntryDao {
         restSeconds: Int? = null,
         splitSeconds: Double? = null,
         resistance: Int? = null,
+        strokeRate: Int? = null,
     ): Long
 
     @Insert
