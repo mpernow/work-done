@@ -1,0 +1,4 @@
+<resources>
+    <!-- Only used before Compose draws its first frame; the real theme lives in ui/theme. -->
+    <style name="Theme.WorkDone" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
