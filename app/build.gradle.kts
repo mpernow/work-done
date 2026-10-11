@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     // AGP 9 compiles Kotlin itself, so the kotlin-android plugin isn't applied.
     alias(libs.plugins.android.application)
@@ -5,6 +7,15 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
+}
+
+/**
+ * Release signing details, kept out of git. The file names a keystore that lives outside the
+ * repository, plus its passwords; see the comment in .gitignore.
+ */
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use(::load)
 }
 
 android {
@@ -19,12 +30,30 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        if (keystoreProperties.isNotEmpty()) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Personal sideloaded app: sign release builds with the debug key.
-            signingConfig = signingConfigs.getByName("debug")
+            // Never fall back to the debug key: an app signed with it can't later be updated
+            // with the real key, only reinstalled, which deletes its data.
+            signingConfig = signingConfigs.findByName("release")
+            ndk {
+                // Only the phone's processor type; the emulator runs debug builds.
+                // `-Pworkdone.abis=x86_64` builds a release for the emulator instead.
+                abiFilters += (findProperty("workdone.abis") as String? ?: "arm64-v8a").split(",")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"

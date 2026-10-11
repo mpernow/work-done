@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -160,6 +161,7 @@ class RowingPhotoViewModel(
                     )
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "Reading the photo failed", e)
                 RowingPhotoUi.Failed(photo, "Couldn't read the photo: ${e.message ?: e.javaClass.simpleName}")
             }
         }
@@ -212,6 +214,8 @@ class RowingPhotoViewModel(
             SetInput.parse(draft.copy(rest = review.rest, resistance = review.resistance), review.trackingType, WeightUnit.KG)
     }
 }
+
+private const val TAG = "RowingPhoto"
 
 private val dateFormatter = DateTimeFormatter.ofPattern("EEE d MMM yyyy")
 

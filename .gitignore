@@ -13,3 +13,10 @@ local.properties
 
 # OS
 .DS_Store
+
+# Release signing. keystore.properties holds the passwords and points at a keystore kept
+# outside this repository; neither may ever be committed. Back both up somewhere safe:
+# without the keystore, the installed app can't be updated, only reinstalled (losing its data).
+keystore.properties
+*.jks
+*.keystore

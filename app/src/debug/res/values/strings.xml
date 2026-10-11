@@ -1,0 +1,4 @@
+<resources>
+    <!-- Tells the debug build apart from the release build when both are installed. -->
+    <string name="app_name">Work Done debug</string>
+</resources>
