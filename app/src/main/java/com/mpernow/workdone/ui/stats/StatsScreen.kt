@@ -22,8 +22,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mpernow.workdone.data.repository.WorkoutRepository
 import com.mpernow.workdone.data.settings.SettingsRepository
-import com.mpernow.workdone.domain.CategoryTotals
-import com.mpernow.workdone.domain.ExerciseCategory
 import com.mpernow.workdone.domain.MetricKind
 import com.mpernow.workdone.domain.Progress
 import com.mpernow.workdone.domain.SetInput
@@ -31,11 +29,11 @@ import com.mpernow.workdone.domain.StatsRange
 import com.mpernow.workdone.domain.TrainingStats
 import com.mpernow.workdone.domain.WeekTotals
 import com.mpernow.workdone.domain.WeightUnit
+import com.mpernow.workdone.domain.WorkoutTotals
 import com.mpernow.workdone.ui.charts.AxisSteps
 import com.mpernow.workdone.ui.charts.ChartCard
 import com.mpernow.workdone.ui.charts.ChartTable
 import com.mpernow.workdone.ui.charts.ConsistencyHeatmap
-import com.mpernow.workdone.ui.charts.HorizontalBars
 import com.mpernow.workdone.ui.charts.RangeChips
 import com.mpernow.workdone.ui.charts.StatTile
 import com.mpernow.workdone.ui.charts.WeeklyColumnChart
@@ -62,21 +60,20 @@ data class StatsUi(
     /** Weekly volume in the display unit. */
     val weeklyVolume: List<Double>,
     val setsPerDay: Map<LocalDate, Int>,
-    val categorySplit: List<Pair<ExerciseCategory, Int>>,
 )
 
 class StatsViewModel(workoutRepository: WorkoutRepository, settingsRepository: SettingsRepository) : ViewModel() {
     private val range = MutableStateFlow(StatsRange.THREE_MONTHS)
 
     val uiState: StateFlow<StatsUi?> = combine(
-        workoutRepository.observeCategoryTotals(),
+        workoutRepository.observeWorkoutTotals(),
         settingsRepository.weightUnit,
         range,
     ) { totals, unit, range ->
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
         val rows = totals.map {
-            CategoryTotals(it.workoutId, it.startedAt.atZone(zone).toLocalDate(), it.category, it.setCount, it.volumeKg)
+            WorkoutTotals(it.workoutId, it.startedAt.atZone(zone).toLocalDate(), it.setCount, it.volumeKg)
         }
         val weeks = TrainingStats.weeklyTotals(rows, today, range.weeks)
         val from = weeks.first().weekStart
@@ -90,7 +87,6 @@ class StatsViewModel(workoutRepository: WorkoutRepository, settingsRepository: S
             weeks = weeks,
             weeklyVolume = weeks.map { SetInput.fromKg(it.volumeKg, unit) },
             setsPerDay = TrainingStats.setsPerDay(rows, from),
-            categorySplit = TrainingStats.categorySplit(rows, from),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -133,15 +129,6 @@ fun StatsScreen(
                         today = ui.today,
                         surfaceColor = CardDefaults.cardColors().containerColor,
                     )
-                }
-            }
-            item {
-                ChartCard(title = "Sets by category") {
-                    if (ui.categorySplit.isEmpty()) {
-                        EmptyChartText()
-                    } else {
-                        HorizontalBars(ui.categorySplit.map { (category, sets) -> category.label to sets }) { "$it" }
-                    }
                 }
             }
         }

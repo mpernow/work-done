@@ -11,7 +11,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,27 +53,16 @@ fun ExercisesScreen(
             PlaceholderScreen("No exercises yet", "Tap + to add one.", Modifier.padding(padding))
             return@AppScaffold
         }
-        val byCategory = exercises.groupBy { it.category }.toSortedMap(compareBy { it.ordinal })
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(bottom = 88.dp), // keep the last row clear of the FAB
         ) {
-            byCategory.forEach { (category, list) ->
-                item(key = "header-$category") {
-                    Text(
-                        category.label,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
-                    )
-                }
-                items(list, key = { it.id }) { exercise ->
-                    ListItem(
-                        headlineContent = { Text(exercise.name) },
-                        supportingContent = { Text(exercise.trackingType.label) },
-                        modifier = Modifier.clickable { onExerciseClick(exercise.id) },
-                    )
-                }
+            items(exercises, key = { it.id }) { exercise ->
+                ListItem(
+                    headlineContent = { Text(exercise.name) },
+                    supportingContent = { Text(exercise.trackingType.label) },
+                    modifier = Modifier.clickable { onExerciseClick(exercise.id) },
+                )
             }
         }
     }

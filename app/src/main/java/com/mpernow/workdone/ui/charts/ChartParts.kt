@@ -1,18 +1,13 @@
 package com.mpernow.workdone.ui.charts
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -109,38 +104,6 @@ fun <T> RangeChips(options: List<T>, selected: T, label: (T) -> String, onSelect
     ) {
         options.forEach { option ->
             FilterChip(selected = option == selected, onClick = { onSelect(option) }, label = { Text(label(option)) })
-        }
-    }
-}
-
-/** Horizontal bars in a single colour, each labelled with its value at the bar's end. */
-@Composable
-fun HorizontalBars(rows: List<Pair<String, Int>>, valueLabel: (Int) -> String) {
-    val max = rows.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: return
-    val barColor = MaterialTheme.colorScheme.primary
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        rows.forEach { (label, value) ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(88.dp))
-                BoxWithConstraints(Modifier.weight(1f)) {
-                    // Leave room after the longest bar for its value label.
-                    val barWidth = (maxWidth - 64.dp) * (value.toFloat() / max)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Row(
-                            Modifier
-                                .width(barWidth.coerceAtLeast(2.dp))
-                                .height(12.dp)
-                                .background(barColor, RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)),
-                        ) {}
-                        Text(
-                            valueLabel(value),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
-            }
         }
     }
 }

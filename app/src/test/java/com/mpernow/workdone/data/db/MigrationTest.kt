@@ -35,6 +35,22 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate2To3DropsCategoriesButKeepsExercises() {
+        helper.createDatabase(DB_NAME, 2).use { db ->
+            db.execSQL("INSERT INTO exercises (id, name, category, trackingType) VALUES (1, 'Squat', 'LEGS', 'WEIGHT_REPS')")
+        }
+
+        helper.runMigrationsAndValidate(DB_NAME, 3, true).use { db ->
+            db.query("SELECT name, trackingType FROM exercises WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Squat", cursor.getString(0))
+                assertEquals("WEIGHT_REPS", cursor.getString(1))
+                assertEquals(-1, cursor.getColumnIndex("category"))
+            }
+        }
+    }
+
     private companion object {
         const val DB_NAME = "migration-test"
     }

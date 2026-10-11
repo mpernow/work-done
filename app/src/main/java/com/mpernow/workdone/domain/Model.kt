@@ -1,16 +1,5 @@
 package com.mpernow.workdone.domain
 
-enum class ExerciseCategory(val label: String) {
-    CHEST("Chest"),
-    BACK("Back"),
-    SHOULDERS("Shoulders"),
-    ARMS("Arms"),
-    LEGS("Legs"),
-    CORE("Core"),
-    CARDIO("Cardio"),
-    OTHER("Other"),
-}
-
 /** Decides which set fields are filled in for an exercise. */
 enum class TrackingType(val label: String) {
     WEIGHT_REPS("Weight × reps"),

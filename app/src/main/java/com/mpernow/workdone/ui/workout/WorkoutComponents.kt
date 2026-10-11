@@ -203,7 +203,7 @@ fun ExercisePickerSheet(
             items(matches, key = { it.id }) { exercise ->
                 ListItem(
                     headlineContent = { Text(exercise.name) },
-                    supportingContent = { Text(exercise.category.label) },
+                    supportingContent = { Text(exercise.trackingType.label) },
                     trailingContent = {
                         if (exercise.id in alreadyAdded) Icon(Icons.Filled.Check, contentDescription = "In this workout")
                     },

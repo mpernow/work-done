@@ -6,7 +6,6 @@ import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
-import com.mpernow.workdone.domain.ExerciseCategory
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 
@@ -97,19 +96,18 @@ interface SetEntryDao {
     )
     fun observeFinishedWithDates(exerciseId: Long): Flow<List<SetWithDate>>
 
-    /** Sets and volume per category in each finished workout, for the statistics screen. */
+    /** Sets and volume of each finished workout, for the statistics screen. */
     @Query(
         """
-        SELECT w.id AS workoutId, w.startedAt AS startedAt, e.category AS category,
+        SELECT w.id AS workoutId, w.startedAt AS startedAt,
                COUNT(*) AS setCount, COALESCE(SUM(s.weightKg * s.reps), 0) AS volumeKg
         FROM set_entries s
         JOIN workouts w ON w.id = s.workoutId
-        JOIN exercises e ON e.id = s.exerciseId
         WHERE w.finishedAt IS NOT NULL
-        GROUP BY w.id, e.category
+        GROUP BY w.id
         """
     )
-    fun observeCategoryTotals(): Flow<List<WorkoutCategoryTotals>>
+    fun observeWorkoutTotals(): Flow<List<WorkoutTotalsRow>>
 
     /** The most recent set of an exercise, used to pre-fill the logging form. */
     @Query(
@@ -184,10 +182,9 @@ data class SetWithDate(
     val startedAt: Instant,
 )
 
-data class WorkoutCategoryTotals(
+data class WorkoutTotalsRow(
     val workoutId: Long,
     val startedAt: Instant,
-    val category: ExerciseCategory,
     val setCount: Int,
     val volumeKg: Double,
 )

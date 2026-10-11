@@ -4,7 +4,6 @@ import android.content.Context
 import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.mpernow.workdone.domain.ExerciseCategory
 import com.mpernow.workdone.domain.TrackingType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -37,7 +36,7 @@ class DaoTest {
     fun tearDown() = db.close()
 
     private suspend fun squat() =
-        exercises.insert(ExerciseEntity(name = "Squat", category = ExerciseCategory.LEGS, trackingType = TrackingType.WEIGHT_REPS))
+        exercises.insert(ExerciseEntity(name = "Squat", trackingType = TrackingType.WEIGHT_REPS))
 
     private suspend fun addSet(workoutId: Long, exerciseId: Long, weightKg: Double, reps: Int = 5) =
         sets.insertAtEnd(workoutId, exerciseId, reps, weightKg, durationSeconds = null, distanceMeters = null)
@@ -115,7 +114,7 @@ class DaoTest {
     fun exerciseSummariesCountSetsPerExerciseInEachWorkout() = runTest {
         val squatId = squat()
         val benchId = exercises.insert(
-            ExerciseEntity(name = "Bench press", category = ExerciseCategory.CHEST, trackingType = TrackingType.WEIGHT_REPS),
+            ExerciseEntity(name = "Bench press", trackingType = TrackingType.WEIGHT_REPS),
         )
         val workoutId = workouts.insert(WorkoutEntity(startedAt = Instant.now()))
         addSet(workoutId, benchId, 60.0)
@@ -151,10 +150,10 @@ class DaoTest {
     }
 
     @Test
-    fun categoryTotalsSumVolumeAndTreatUnweightedSetsAsZero() = runTest {
+    fun workoutTotalsSumVolumeAndTreatUnweightedSetsAsZero() = runTest {
         val squatId = squat()
         val plankId = exercises.insert(
-            ExerciseEntity(name = "Plank", category = ExerciseCategory.CORE, trackingType = TrackingType.DURATION),
+            ExerciseEntity(name = "Plank", trackingType = TrackingType.DURATION),
         )
         val workoutId = workouts.insert(
             WorkoutEntity(startedAt = Instant.parse("2026-10-01T10:00:00Z"), finishedAt = Instant.parse("2026-10-01T11:00:00Z")),
@@ -163,11 +162,10 @@ class DaoTest {
         addSet(workoutId, squatId, 100.0, reps = 3)
         sets.insertAtEnd(workoutId, plankId, reps = null, weightKg = null, durationSeconds = 60, distanceMeters = null)
 
-        val totals = sets.observeCategoryTotals().first().associateBy { it.category }
+        val totals = sets.observeWorkoutTotals().first().single()
 
-        assertEquals(2, totals.getValue(ExerciseCategory.LEGS).setCount)
-        assertEquals(800.0, totals.getValue(ExerciseCategory.LEGS).volumeKg, 1e-9)
-        assertEquals(1, totals.getValue(ExerciseCategory.CORE).setCount)
-        assertEquals(0.0, totals.getValue(ExerciseCategory.CORE).volumeKg, 1e-9)
+        assertEquals(workoutId, totals.workoutId)
+        assertEquals(3, totals.setCount)
+        assertEquals(800.0, totals.volumeKg, 1e-9) // the plank adds a set but no volume
     }
 }

@@ -2,8 +2,6 @@ package com.mpernow.workdone.ui.exercises
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +14,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,7 +39,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mpernow.workdone.data.db.ExerciseEntity
 import com.mpernow.workdone.data.repository.ExerciseRepository
 import com.mpernow.workdone.data.repository.SaveExerciseResult
-import com.mpernow.workdone.domain.ExerciseCategory
 import com.mpernow.workdone.domain.TrackingType
 import com.mpernow.workdone.ui.common.AppScaffold
 import com.mpernow.workdone.ui.common.appViewModelFactory
@@ -56,7 +52,6 @@ enum class EditOutcome { SAVED, DELETED }
 
 data class ExerciseEditUiState(
     val name: String = "",
-    val category: ExerciseCategory = ExerciseCategory.OTHER,
     val trackingType: TrackingType = TrackingType.WEIGHT_REPS,
     val isNew: Boolean = true,
     val loading: Boolean = false,
@@ -87,7 +82,6 @@ class ExerciseEditViewModel(
                     } else {
                         it.copy(
                             name = exercise.name,
-                            category = exercise.category,
                             trackingType = exercise.trackingType,
                             setCount = setCount,
                             loading = false,
@@ -100,8 +94,6 @@ class ExerciseEditViewModel(
 
     fun setName(name: String) = _state.update { it.copy(name = name, nameError = null) }
 
-    fun setCategory(category: ExerciseCategory) = _state.update { it.copy(category = category) }
-
     fun setTrackingType(type: TrackingType) = _state.update { if (it.setCount == 0) it.copy(trackingType = type) else it }
 
     fun save() {
@@ -112,7 +104,7 @@ class ExerciseEditViewModel(
             return
         }
         viewModelScope.launch {
-            when (exerciseRepository.save(ExerciseEntity(exerciseId, name, state.category, state.trackingType))) {
+            when (exerciseRepository.save(ExerciseEntity(exerciseId, name, state.trackingType))) {
                 is SaveExerciseResult.Saved -> _state.update { it.copy(outcome = EditOutcome.SAVED) }
                 SaveExerciseResult.NameTaken -> _state.update { it.copy(nameError = "There's already an exercise called $name") }
             }
@@ -122,13 +114,12 @@ class ExerciseEditViewModel(
     fun delete() {
         val state = _state.value
         viewModelScope.launch {
-            val deleted = exerciseRepository.delete(ExerciseEntity(exerciseId, state.name, state.category, state.trackingType))
+            val deleted = exerciseRepository.delete(ExerciseEntity(exerciseId, state.name, state.trackingType))
             if (deleted) _state.update { it.copy(outcome = EditOutcome.DELETED) }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ExerciseEditScreen(
     exerciseId: Long,
@@ -178,17 +169,6 @@ fun ExerciseEditScreen(
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth(),
             )
-
-            Text("Category", style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ExerciseCategory.entries.forEach { category ->
-                    FilterChip(
-                        selected = category == state.category,
-                        onClick = { viewModel.setCategory(category) },
-                        label = { Text(category.label) },
-                    )
-                }
-            }
 
             Text("Tracked as", style = MaterialTheme.typography.titleSmall)
             Column(Modifier.selectableGroup()) {

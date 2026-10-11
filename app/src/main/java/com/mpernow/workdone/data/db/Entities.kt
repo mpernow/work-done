@@ -4,7 +4,6 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.mpernow.workdone.domain.ExerciseCategory
 import com.mpernow.workdone.domain.SetValues
 import com.mpernow.workdone.domain.TrackingType
 import java.time.Instant
@@ -13,7 +12,6 @@ import java.time.Instant
 data class ExerciseEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val category: ExerciseCategory,
     val trackingType: TrackingType,
 )
 

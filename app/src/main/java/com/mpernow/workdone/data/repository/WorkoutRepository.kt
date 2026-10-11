@@ -4,9 +4,9 @@ import com.mpernow.workdone.data.db.SetEntryDao
 import com.mpernow.workdone.data.db.SetEntryEntity
 import com.mpernow.workdone.data.db.SetWithDate
 import com.mpernow.workdone.data.db.WorkoutDao
-import com.mpernow.workdone.data.db.WorkoutCategoryTotals
 import com.mpernow.workdone.data.db.WorkoutEntity
 import com.mpernow.workdone.data.db.WorkoutExerciseSummary
+import com.mpernow.workdone.data.db.WorkoutTotalsRow
 import com.mpernow.workdone.domain.SetValues
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
@@ -33,7 +33,7 @@ class WorkoutRepository(
     fun observeFinishedSetsForExercise(exerciseId: Long): Flow<List<SetWithDate>> =
         setEntryDao.observeFinishedWithDates(exerciseId)
 
-    fun observeCategoryTotals(): Flow<List<WorkoutCategoryTotals>> = setEntryDao.observeCategoryTotals()
+    fun observeWorkoutTotals(): Flow<List<WorkoutTotalsRow>> = setEntryDao.observeWorkoutTotals()
 
     suspend fun lastSetFor(exerciseId: Long): SetEntryEntity? = setEntryDao.lastForExercise(exerciseId)
 
