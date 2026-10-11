@@ -43,6 +43,7 @@ fun WorkDoneNavHost(navController: NavHostController, modifier: Modifier = Modif
                 exerciseId = exerciseId,
                 onNavigateUp = { navController.navigateUp() },
                 onEdit = { navController.navigate(ExerciseEditRoute(exerciseId = exerciseId)) },
+                onWorkoutClick = { id -> navController.navigate(WorkoutDetailRoute(id)) },
             )
         }
         composable<ExerciseEditRoute> { entry ->

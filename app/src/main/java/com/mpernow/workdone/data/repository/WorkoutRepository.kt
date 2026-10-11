@@ -2,7 +2,9 @@ package com.mpernow.workdone.data.repository
 
 import com.mpernow.workdone.data.db.SetEntryDao
 import com.mpernow.workdone.data.db.SetEntryEntity
+import com.mpernow.workdone.data.db.SetWithDate
 import com.mpernow.workdone.data.db.WorkoutDao
+import com.mpernow.workdone.data.db.WorkoutCategoryTotals
 import com.mpernow.workdone.data.db.WorkoutEntity
 import com.mpernow.workdone.data.db.WorkoutExerciseSummary
 import com.mpernow.workdone.domain.SetValues
@@ -27,6 +29,11 @@ class WorkoutRepository(
 
     fun observeSetsForExercise(exerciseId: Long): Flow<List<SetEntryEntity>> =
         setEntryDao.observeForExercise(exerciseId)
+
+    fun observeFinishedSetsForExercise(exerciseId: Long): Flow<List<SetWithDate>> =
+        setEntryDao.observeFinishedWithDates(exerciseId)
+
+    fun observeCategoryTotals(): Flow<List<WorkoutCategoryTotals>> = setEntryDao.observeCategoryTotals()
 
     suspend fun lastSetFor(exerciseId: Long): SetEntryEntity? = setEntryDao.lastForExercise(exerciseId)
 

@@ -2,10 +2,13 @@ package com.mpernow.workdone.data.db
 
 import androidx.room.Dao
 import androidx.room.Delete
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
+import com.mpernow.workdone.domain.ExerciseCategory
 import kotlinx.coroutines.flow.Flow
+import java.time.Instant
 
 @Dao
 interface ExerciseDao {
@@ -45,6 +48,12 @@ interface WorkoutDao {
     @Query("SELECT * FROM workouts WHERE finishedAt IS NOT NULL ORDER BY startedAt DESC")
     fun observeFinished(): Flow<List<WorkoutEntity>>
 
+    @Query("SELECT COUNT(*) FROM workouts")
+    suspend fun count(): Int
+
+    @Query("SELECT MAX(startedAt) FROM workouts")
+    suspend fun latestStart(): Instant?
+
     /** The workout in progress, if any. */
     @Query("SELECT * FROM workouts WHERE finishedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
     fun observeActive(): Flow<WorkoutEntity?>
@@ -76,6 +85,31 @@ interface SetEntryDao {
         """
     )
     fun observeForExercise(exerciseId: Long): Flow<List<SetEntryEntity>>
+
+    /** Every set of an exercise in finished workouts, oldest first, for its progress charts. */
+    @Query(
+        """
+        SELECT s.*, w.startedAt AS startedAt FROM set_entries s
+        JOIN workouts w ON w.id = s.workoutId
+        WHERE s.exerciseId = :exerciseId AND w.finishedAt IS NOT NULL
+        ORDER BY w.startedAt, s.position
+        """
+    )
+    fun observeFinishedWithDates(exerciseId: Long): Flow<List<SetWithDate>>
+
+    /** Sets and volume per category in each finished workout, for the statistics screen. */
+    @Query(
+        """
+        SELECT w.id AS workoutId, w.startedAt AS startedAt, e.category AS category,
+               COUNT(*) AS setCount, COALESCE(SUM(s.weightKg * s.reps), 0) AS volumeKg
+        FROM set_entries s
+        JOIN workouts w ON w.id = s.workoutId
+        JOIN exercises e ON e.id = s.exerciseId
+        WHERE w.finishedAt IS NOT NULL
+        GROUP BY w.id, e.category
+        """
+    )
+    fun observeCategoryTotals(): Flow<List<WorkoutCategoryTotals>>
 
     /** The most recent set of an exercise, used to pre-fill the logging form. */
     @Query(
@@ -143,4 +177,17 @@ data class WorkoutExerciseSummary(
     val setCount: Int,
     /** Position of the exercise's first set, to list exercises in the order they were done. */
     val firstPosition: Int,
+)
+
+data class SetWithDate(
+    @Embedded val set: SetEntryEntity,
+    val startedAt: Instant,
+)
+
+data class WorkoutCategoryTotals(
+    val workoutId: Long,
+    val startedAt: Instant,
+    val category: ExerciseCategory,
+    val setCount: Int,
+    val volumeKg: Double,
 )

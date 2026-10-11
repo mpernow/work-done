@@ -1,0 +1,75 @@
+package com.mpernow.workdone.domain
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+import java.time.LocalDate
+
+class ProgressTest {
+    private val squatSets = listOf(
+        SetValues(reps = 5, weightKg = 100.0),
+        SetValues(reps = 3, weightKg = 110.0),
+        SetValues(reps = 10, weightKg = 80.0),
+    )
+
+    @Test
+    fun weightMetricsTakeTheBestSetOrTheSum() {
+        // Epley: 100×5 → 116.67, 110×3 → 121, 80×10 → 106.67
+        assertEquals(121.0, Progress.sessionValue(squatSets, ProgressMetric.EST_ONE_REP_MAX)!!, 1e-9)
+        assertEquals(110.0, Progress.sessionValue(squatSets, ProgressMetric.MAX_WEIGHT))
+        assertEquals(1630.0, Progress.sessionValue(squatSets, ProgressMetric.VOLUME))
+    }
+
+    @Test
+    fun repsAndDurationMetrics() {
+        val sets = listOf(SetValues(reps = 12, durationSeconds = 60), SetValues(reps = 8, durationSeconds = 45))
+        assertEquals(12.0, Progress.sessionValue(sets, ProgressMetric.BEST_SET_REPS))
+        assertEquals(20.0, Progress.sessionValue(sets, ProgressMetric.TOTAL_REPS))
+        assertEquals(60.0, Progress.sessionValue(sets, ProgressMetric.LONGEST_SET))
+        assertEquals(105.0, Progress.sessionValue(sets, ProgressMetric.TOTAL_TIME))
+    }
+
+    @Test
+    fun paceIsSecondsPerKilometreOverAllTimedSets() {
+        val sets = listOf(
+            SetValues(distanceMeters = 5000.0, durationSeconds = 1500),
+            SetValues(distanceMeters = 1000.0, durationSeconds = 240),
+        )
+        assertEquals(290.0, Progress.sessionValue(sets, ProgressMetric.PACE)!!, 1e-9)
+        assertEquals(6000.0, Progress.sessionValue(sets, ProgressMetric.DISTANCE))
+    }
+
+    @Test
+    fun missingFieldsGiveNoValue() {
+        assertNull(Progress.sessionValue(listOf(SetValues(reps = 10)), ProgressMetric.EST_ONE_REP_MAX))
+        assertNull(Progress.sessionValue(listOf(SetValues(durationSeconds = 60)), ProgressMetric.PACE))
+        assertNull(Progress.sessionValue(emptyList(), ProgressMetric.VOLUME))
+    }
+
+    @Test
+    fun bestPrefersTheFirstTimeARecordWasSet() {
+        val points = listOf(
+            ProgressPoint(1, LocalDate.of(2026, 9, 1), 100.0),
+            ProgressPoint(2, LocalDate.of(2026, 9, 8), 110.0),
+            ProgressPoint(3, LocalDate.of(2026, 9, 15), 110.0),
+        )
+        assertEquals(2L, Progress.best(points, ProgressMetric.MAX_WEIGHT)?.workoutId)
+        assertEquals(1L, Progress.best(points, ProgressMetric.PACE)?.workoutId) // lower is better
+    }
+
+    @Test
+    fun formatsValuesForDisplay() {
+        assertEquals("225 lb", Progress.format(Progress.toDisplay(102.05828325, MetricKind.WEIGHT, WeightUnit.LB), MetricKind.WEIGHT, WeightUnit.LB))
+        assertEquals("5.2 km", Progress.format(Progress.toDisplay(5200.0, MetricKind.DISTANCE, WeightUnit.KG), MetricKind.DISTANCE, WeightUnit.KG))
+        assertEquals("4:50 /km", Progress.format(290.0, MetricKind.PACE, WeightUnit.KG))
+        assertEquals("12 reps", Progress.format(12.0, MetricKind.REPS, WeightUnit.KG))
+    }
+
+    @Test
+    fun compactNumbers() {
+        assertEquals("950", Progress.compactNumber(950.0))
+        assertEquals("1.2K", Progress.compactNumber(1234.0))
+        assertEquals("12K", Progress.compactNumber(12_400.0))
+        assertEquals("82.5", Progress.compactNumber(82.5))
+    }
+}

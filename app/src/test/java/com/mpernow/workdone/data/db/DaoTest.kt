@@ -133,4 +133,41 @@ class DaoTest {
             summaries,
         )
     }
+
+    @Test
+    fun progressQueryOnlyIncludesFinishedWorkouts() = runTest {
+        val exerciseId = squat()
+        val finished = workouts.insert(
+            WorkoutEntity(startedAt = Instant.parse("2026-10-01T10:00:00Z"), finishedAt = Instant.parse("2026-10-01T11:00:00Z")),
+        )
+        val active = workouts.insert(WorkoutEntity(startedAt = Instant.parse("2026-10-02T10:00:00Z")))
+        addSet(finished, exerciseId, 100.0)
+        addSet(active, exerciseId, 120.0)
+
+        val rows = sets.observeFinishedWithDates(exerciseId).first()
+
+        assertEquals(listOf(100.0), rows.map { it.set.weightKg })
+        assertEquals(Instant.parse("2026-10-01T10:00:00Z"), rows.single().startedAt)
+    }
+
+    @Test
+    fun categoryTotalsSumVolumeAndTreatUnweightedSetsAsZero() = runTest {
+        val squatId = squat()
+        val plankId = exercises.insert(
+            ExerciseEntity(name = "Plank", category = ExerciseCategory.CORE, trackingType = TrackingType.DURATION),
+        )
+        val workoutId = workouts.insert(
+            WorkoutEntity(startedAt = Instant.parse("2026-10-01T10:00:00Z"), finishedAt = Instant.parse("2026-10-01T11:00:00Z")),
+        )
+        addSet(workoutId, squatId, 100.0, reps = 5)
+        addSet(workoutId, squatId, 100.0, reps = 3)
+        sets.insertAtEnd(workoutId, plankId, reps = null, weightKg = null, durationSeconds = 60, distanceMeters = null)
+
+        val totals = sets.observeCategoryTotals().first().associateBy { it.category }
+
+        assertEquals(2, totals.getValue(ExerciseCategory.LEGS).setCount)
+        assertEquals(800.0, totals.getValue(ExerciseCategory.LEGS).volumeKg, 1e-9)
+        assertEquals(1, totals.getValue(ExerciseCategory.CORE).setCount)
+        assertEquals(0.0, totals.getValue(ExerciseCategory.CORE).volumeKg, 1e-9)
+    }
 }

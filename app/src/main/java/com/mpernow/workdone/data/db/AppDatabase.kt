@@ -24,9 +24,22 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun setEntryDao(): SetEntryDao
 
     companion object {
+        /** File name of the app's database, inside the app's databases folder. */
+        const val NAME = "workdone.db"
+
         fun build(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "workdone.db")
+            Room.databaseBuilder(context, AppDatabase::class.java, NAME)
                 .addCallback(SeedExercises)
+                .build()
+
+        /**
+         * Opens another database file in the databases folder, such as a backup being checked
+         * before import. Opening it upgrades it to the current version and fails if it isn't a
+         * valid Work Done database. No starter exercises are added, and no WAL file is left behind.
+         */
+        fun openFile(context: Context, name: String): AppDatabase =
+            Room.databaseBuilder(context, AppDatabase::class.java, name)
+                .setJournalMode(JournalMode.TRUNCATE)
                 .build()
     }
 }
