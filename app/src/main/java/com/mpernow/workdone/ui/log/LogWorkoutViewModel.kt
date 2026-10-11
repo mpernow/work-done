@@ -50,7 +50,8 @@ class LogWorkoutViewModel(
     /** When the rest timer runs out, in [SystemClock.elapsedRealtime] milliseconds; null when not running. */
     val restEndsAt: StateFlow<Long?> = _restEndsAt.asStateFlow()
 
-    val exercises: StateFlow<List<ExerciseEntity>> = exerciseRepository.observeAll()
+    /** Most used first, which is the order the exercise picker shows them in. */
+    val exercises: StateFlow<List<ExerciseEntity>> = exerciseRepository.observeByUsage()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val editor = WorkoutSetsEditor(viewModelScope, workoutRepository, settingsRepository, exercises)

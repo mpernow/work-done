@@ -16,6 +16,8 @@ class ExerciseRepository(
 ) {
     fun observeAll(): Flow<List<ExerciseEntity>> = exerciseDao.observeAll()
 
+    fun observeByUsage(): Flow<List<ExerciseEntity>> = exerciseDao.observeByUsage()
+
     fun observe(id: Long): Flow<ExerciseEntity?> = exerciseDao.observe(id)
 
     suspend fun get(id: Long): ExerciseEntity? = exerciseDao.get(id)

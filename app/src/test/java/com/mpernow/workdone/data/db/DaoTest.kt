@@ -168,4 +168,23 @@ class DaoTest {
         assertEquals(3, totals.setCount)
         assertEquals(800.0, totals.volumeKg, 1e-9) // the plank adds a set but no volume
     }
+
+    @Test
+    fun byUsageCountsWorkoutsNotSetsThenSortsByName() = runTest {
+        val squat = squat()
+        val bench = exercises.insert(ExerciseEntity(name = "Bench press", trackingType = TrackingType.WEIGHT_REPS))
+        exercises.insert(ExerciseEntity(name = "Deadlift", trackingType = TrackingType.WEIGHT_REPS)) // never used
+        exercises.insert(ExerciseEntity(name = "curl", trackingType = TrackingType.WEIGHT_REPS)) // never used, lower case
+        val first = workouts.insert(WorkoutEntity(startedAt = Instant.parse("2026-10-01T10:00:00Z")))
+        val second = workouts.insert(WorkoutEntity(startedAt = Instant.parse("2026-10-03T10:00:00Z")))
+        // Squat: many sets in one workout. Bench: one set in each of two workouts.
+        repeat(5) { addSet(first, squat, 100.0) }
+        addSet(first, bench, 60.0)
+        addSet(second, bench, 60.0)
+
+        assertEquals(
+            listOf("Bench press", "Squat", "curl", "Deadlift"),
+            exercises.observeByUsage().first().map { it.name },
+        )
+    }
 }

@@ -14,6 +14,21 @@ interface ExerciseDao {
     @Query("SELECT * FROM exercises ORDER BY name COLLATE NOCASE")
     fun observeAll(): Flow<List<ExerciseEntity>>
 
+    /**
+     * Most used first, counted as the number of workouts an exercise appears in; exercises
+     * used equally often, or never, are alphabetical.
+     */
+    @Query(
+        """
+        SELECT e.* FROM exercises e
+        LEFT JOIN (
+            SELECT exerciseId, COUNT(DISTINCT workoutId) AS workouts FROM set_entries GROUP BY exerciseId
+        ) usage ON usage.exerciseId = e.id
+        ORDER BY COALESCE(usage.workouts, 0) DESC, e.name COLLATE NOCASE
+        """
+    )
+    fun observeByUsage(): Flow<List<ExerciseEntity>>
+
     @Query("SELECT * FROM exercises WHERE id = :id")
     fun observe(id: Long): Flow<ExerciseEntity?>
 

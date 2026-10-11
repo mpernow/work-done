@@ -81,7 +81,8 @@ class WorkoutDetailViewModel(
     settingsRepository: SettingsRepository,
     workoutId: Long,
 ) : ViewModel() {
-    val exercises: StateFlow<List<ExerciseEntity>> = exerciseRepository.observeAll()
+    /** Most used first, which is the order the exercise picker shows them in. */
+    val exercises: StateFlow<List<ExerciseEntity>> = exerciseRepository.observeByUsage()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val editor = WorkoutSetsEditor(viewModelScope, workoutRepository, settingsRepository, exercises)
