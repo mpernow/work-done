@@ -17,6 +17,9 @@ import kotlinx.serialization.Serializable
 @Serializable object SettingsRoute
 @Serializable data class ExerciseDetailRoute(val exerciseId: Long)
 
+/** Creates a new exercise when [exerciseId] is 0, optionally starting from [initialName]. */
+@Serializable data class ExerciseEditRoute(val exerciseId: Long = 0, val initialName: String = "")
+
 /** The tabs shown in the bottom navigation bar, in order. */
 enum class TopLevelDestination(val route: Any, val label: String, val icon: ImageVector) {
     LOG(LogRoute, "Log", Icons.Filled.Add),

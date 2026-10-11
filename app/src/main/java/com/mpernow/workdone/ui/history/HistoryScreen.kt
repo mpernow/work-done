@@ -1,6 +1,7 @@
 package com.mpernow.workdone.ui.history
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ListItem
@@ -14,6 +15,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mpernow.workdone.data.db.WorkoutEntity
 import com.mpernow.workdone.data.repository.WorkoutRepository
+import com.mpernow.workdone.ui.common.AppScaffold
 import com.mpernow.workdone.ui.common.PlaceholderScreen
 import com.mpernow.workdone.ui.common.appViewModelFactory
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,16 +38,19 @@ fun HistoryScreen(
     viewModel: HistoryViewModel = viewModel(factory = appViewModelFactory { HistoryViewModel(it.workoutRepository) }),
 ) {
     val workouts by viewModel.workouts.collectAsStateWithLifecycle()
-    if (workouts.isEmpty()) {
-        PlaceholderScreen("History", "No workouts logged yet.")
-        return
-    }
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(workouts, key = { it.id }) { workout ->
-            ListItem(
-                headlineContent = { Text(dateFormatter.format(workout.startedAt.atZone(ZoneId.systemDefault()))) },
-                supportingContent = workout.notes.takeIf { it.isNotBlank() }?.let { { Text(it) } },
-            )
+    AppScaffold(title = "History") { padding ->
+        if (workouts.isEmpty()) {
+            PlaceholderScreen("No workouts yet", "Finished workouts show up here.", Modifier.padding(padding))
+            return@AppScaffold
+        }
+        LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+            items(workouts, key = { it.id }) { workout ->
+                val supporting = if (workout.finishedAt == null) "In progress" else workout.notes.takeIf { it.isNotBlank() }
+                ListItem(
+                    headlineContent = { Text(dateFormatter.format(workout.startedAt.atZone(ZoneId.systemDefault()))) },
+                    supportingContent = supporting?.let { { Text(it) } },
+                )
+            }
         }
     }
 }

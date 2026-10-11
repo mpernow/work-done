@@ -4,12 +4,10 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.mpernow.workdone.domain.ExerciseCategory
+import com.mpernow.workdone.domain.SetValues
+import com.mpernow.workdone.domain.TrackingType
 import java.time.Instant
-
-enum class ExerciseCategory { CHEST, BACK, SHOULDERS, ARMS, LEGS, CORE, CARDIO, OTHER }
-
-/** Decides which [SetEntryEntity] fields are filled in for an exercise. */
-enum class TrackingType { WEIGHT_REPS, REPS, DURATION, DISTANCE_TIME }
 
 @Entity(tableName = "exercises", indices = [Index(value = ["name"], unique = true)])
 data class ExerciseEntity(
@@ -23,6 +21,8 @@ data class ExerciseEntity(
 data class WorkoutEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val startedAt: Instant,
+    /** Null while the workout is in progress. */
+    val finishedAt: Instant? = null,
     val notes: String = "",
 )
 
@@ -58,4 +58,11 @@ data class SetEntryEntity(
     val weightKg: Double? = null,
     val durationSeconds: Int? = null,
     val distanceMeters: Double? = null,
+)
+
+fun SetEntryEntity.toValues() = SetValues(
+    reps = reps,
+    weightKg = weightKg,
+    durationSeconds = durationSeconds,
+    distanceMeters = distanceMeters,
 )

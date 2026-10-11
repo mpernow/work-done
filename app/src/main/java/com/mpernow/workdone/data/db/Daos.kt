@@ -15,6 +15,12 @@ interface ExerciseDao {
     @Query("SELECT * FROM exercises WHERE id = :id")
     fun observe(id: Long): Flow<ExerciseEntity?>
 
+    @Query("SELECT * FROM exercises WHERE id = :id")
+    suspend fun get(id: Long): ExerciseEntity?
+
+    @Query("SELECT * FROM exercises WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun findByName(name: String): ExerciseEntity?
+
     @Insert
     suspend fun insert(exercise: ExerciseEntity): Long
 
@@ -32,6 +38,16 @@ interface WorkoutDao {
 
     @Query("SELECT * FROM workouts WHERE id = :id")
     fun observe(id: Long): Flow<WorkoutEntity?>
+
+    @Query("SELECT * FROM workouts WHERE id = :id")
+    suspend fun get(id: Long): WorkoutEntity?
+
+    /** The workout in progress, if any. */
+    @Query("SELECT * FROM workouts WHERE finishedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
+    fun observeActive(): Flow<WorkoutEntity?>
+
+    @Query("SELECT * FROM workouts WHERE finishedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
+    suspend fun getActive(): WorkoutEntity?
 
     @Insert
     suspend fun insert(workout: WorkoutEntity): Long
@@ -69,6 +85,32 @@ interface SetEntryDao {
         """
     )
     suspend fun lastForExercise(exerciseId: Long): SetEntryEntity?
+
+    @Query("SELECT COUNT(*) FROM set_entries WHERE exerciseId = :exerciseId")
+    suspend fun countForExercise(exerciseId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM set_entries WHERE workoutId = :workoutId")
+    suspend fun countForWorkout(workoutId: Long): Int
+
+    /** Appends a set to the end of a workout. The position is computed in the same statement, so it can't race. */
+    @Query(
+        """
+        INSERT INTO set_entries (workoutId, exerciseId, position, reps, weightKg, durationSeconds, distanceMeters)
+        VALUES (
+            :workoutId, :exerciseId,
+            (SELECT COALESCE(MAX(position), -1) + 1 FROM set_entries WHERE workoutId = :workoutId),
+            :reps, :weightKg, :durationSeconds, :distanceMeters
+        )
+        """
+    )
+    suspend fun insertAtEnd(
+        workoutId: Long,
+        exerciseId: Long,
+        reps: Int?,
+        weightKg: Double?,
+        durationSeconds: Int?,
+        distanceMeters: Double?,
+    ): Long
 
     @Insert
     suspend fun insert(set: SetEntryEntity): Long

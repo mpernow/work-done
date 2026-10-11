@@ -13,7 +13,7 @@ import com.mpernow.workdone.data.settings.SettingsRepository
 class AppContainer(context: Context) {
     private val database = AppDatabase.build(context)
 
-    val exerciseRepository = ExerciseRepository(database.exerciseDao())
+    val exerciseRepository = ExerciseRepository(database.exerciseDao(), database.setEntryDao())
     val workoutRepository = WorkoutRepository(database.workoutDao(), database.setEntryDao())
     val settingsRepository = SettingsRepository(context)
 }

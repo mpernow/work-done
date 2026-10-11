@@ -1,5 +1,7 @@
 package com.mpernow.workdone.ui
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -25,6 +27,8 @@ fun WorkDoneApp() {
     val currentDestination = backStackEntry?.destination
 
     Scaffold(
+        // Each screen's top app bar handles the status bar itself.
+        contentWindowInsets = WindowInsets(0),
         bottomBar = {
             NavigationBar {
                 TopLevelDestination.entries.forEach { destination ->
@@ -46,6 +50,6 @@ fun WorkDoneApp() {
             }
         },
     ) { innerPadding ->
-        WorkDoneNavHost(navController, Modifier.padding(innerPadding))
+        WorkDoneNavHost(navController, Modifier.padding(innerPadding).consumeWindowInsets(innerPadding))
     }
 }

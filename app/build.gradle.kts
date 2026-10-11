@@ -39,6 +39,24 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            // Robolectric reaches into JDK internals that recent JDKs close off by default.
+            it.jvmArgs(
+                "--add-opens=java.base/java.io=ALL-UNNAMED",
+                "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
+                "--enable-native-access=ALL-UNNAMED",
+            )
+        }
+    }
+
+    // Lets the Room migration tests read the exported schemas. Robolectric only sees the
+    // app's merged assets, so they're added to debug builds (a few KB, never in release).
+    sourceSets {
+        getByName("debug").assets.directories.add("$projectDir/schemas")
+    }
 }
 
 room {
@@ -69,4 +87,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.room.testing)
 }
