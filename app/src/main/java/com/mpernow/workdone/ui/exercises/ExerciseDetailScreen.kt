@@ -34,7 +34,7 @@ import com.mpernow.workdone.data.db.toValues
 import com.mpernow.workdone.data.repository.ExerciseRepository
 import com.mpernow.workdone.data.repository.WorkoutRepository
 import com.mpernow.workdone.data.settings.SettingsRepository
-import com.mpernow.workdone.domain.ExerciseSession
+import com.mpernow.workdone.domain.LoggedSet
 import com.mpernow.workdone.domain.MetricKind
 import com.mpernow.workdone.domain.Progress
 import com.mpernow.workdone.domain.ProgressMetric
@@ -65,7 +65,7 @@ enum class ProgressRange(val label: String, val months: Long?) {
 
 data class RecordUi(val label: String, val value: String, val date: LocalDate, val workoutId: Long)
 
-data class SessionRow(val workoutId: Long, val date: LocalDate, val setCount: Int, val value: String)
+data class SessionRow(val workoutId: Long, val entry: Int, val date: LocalDate, val setCount: Int, val value: String)
 
 data class ExerciseProgressUi(
     val exercise: ExerciseEntity,
@@ -73,6 +73,10 @@ data class ExerciseProgressUi(
     val metrics: List<ProgressMetric>,
     val metric: ProgressMetric,
     val range: ProgressRange,
+    /** Total distances done, in metres, shortest first; empty unless the type filters by distance. */
+    val distances: List<Int>,
+    /** The distance the charts, records and workouts are limited to. */
+    val distance: Int?,
     val unit: WeightUnit,
     /** The selected metric within the range, oldest first, in display units. */
     val points: List<ProgressPoint>,
@@ -90,23 +94,29 @@ class ExerciseDetailViewModel(
 ) : ViewModel() {
     private val selectedMetric = MutableStateFlow<ProgressMetric?>(null)
     private val range = MutableStateFlow(ProgressRange.ALL)
+    private val selectedDistance = MutableStateFlow<Int?>(null)
+    private val selection = combine(selectedMetric, range, selectedDistance, ::Triple)
 
     val uiState: StateFlow<ExerciseProgressUi?> = combine(
         exerciseRepository.observe(exerciseId),
         workoutRepository.observeFinishedSetsForExercise(exerciseId),
         settingsRepository.weightUnit,
-        selectedMetric,
-        range,
-    ) { exercise, sets, unit, selected, range ->
+        selection,
+    ) { exercise, sets, unit, (selected, range, selectedDistance) ->
         if (exercise == null) return@combine null
         val zone = ZoneId.systemDefault()
-        val sessions = sets.groupBy { it.set.workoutId }.map { (workoutId, workoutSets) ->
-            ExerciseSession(
-                workoutId = workoutId,
-                date = workoutSets.first().startedAt.atZone(zone).toLocalDate(),
-                sets = workoutSets.map { it.set.toValues() },
-            )
+        val allSessions = Progress.sessions(
+            sets.map { LoggedSet(it.set.workoutId, it.set.entry, it.startedAt.atZone(zone).toLocalDate(), it.set.toValues()) },
+            exercise.trackingType,
+        )
+        // Oldest first, so the default is the distance of the latest workout.
+        val distances = if (Progress.filtersByDistance(exercise.trackingType)) {
+            Progress.distances(allSessions)
+        } else {
+            emptyList()
         }
+        val distance = selectedDistance?.takeIf { it in distances } ?: distances.lastOrNull()
+        val sessions = if (distance == null) allSessions else Progress.atDistance(allSessions, distance)
         val metrics = Progress.metricsFor(exercise.trackingType)
         val metric = selected?.takeIf { it in metrics } ?: metrics.first()
         val cutoff = range.months?.let { LocalDate.now(zone).minusMonths(it) }
@@ -117,10 +127,12 @@ class ExerciseDetailViewModel(
 
         ExerciseProgressUi(
             exercise = exercise,
-            hasSets = sessions.isNotEmpty(),
+            hasSets = allSessions.isNotEmpty(),
             metrics = metrics,
             metric = metric,
             range = range,
+            distances = distances.distinct().sorted(),
+            distance = distance,
             unit = unit,
             points = Progress.points(inRange, metric).map { it.copy(value = Progress.toDisplay(it.value, metric.kind, unit)) },
             records = metrics.mapNotNull { m ->
@@ -130,6 +142,7 @@ class ExerciseDetailViewModel(
             sessions = inRange.asReversed().map { session ->
                 SessionRow(
                     workoutId = session.workoutId,
+                    entry = session.entry,
                     date = session.date,
                     setCount = session.sets.size,
                     value = Progress.sessionValue(session.sets, metric)?.let { display(it, metric) } ?: "–",
@@ -144,6 +157,10 @@ class ExerciseDetailViewModel(
 
     fun selectRange(range: ProgressRange) {
         this.range.value = range
+    }
+
+    fun selectDistance(meters: Int) {
+        selectedDistance.value = meters
     }
 }
 
@@ -187,11 +204,16 @@ fun ExerciseDetailScreen(
             item {
                 RangeChips(ProgressRange.entries, ui.range, { it.label }, viewModel::selectRange)
             }
+            if (ui.distance != null && ui.distances.size > 1) {
+                item {
+                    RangeChips(ui.distances, ui.distance, Progress::formatTotalDistance, viewModel::selectDistance)
+                }
+            }
             item { ProgressChartCard(ui, viewModel::selectMetric) }
             item { SectionTitle("Personal records") }
             item { RecordGrid(ui.records, onWorkoutClick) }
             item { SectionTitle("Workouts") }
-            items(ui.sessions, key = { it.workoutId }) { session ->
+            items(ui.sessions, key = { "${it.workoutId}-${it.entry}" }) { session ->
                 ListItem(
                     headlineContent = { Text(longDate.format(session.date)) },
                     supportingContent = { Text(if (session.setCount == 1) "1 set" else "${session.setCount} sets") },

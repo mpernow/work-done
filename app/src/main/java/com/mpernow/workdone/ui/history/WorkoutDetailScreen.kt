@@ -54,6 +54,7 @@ import com.mpernow.workdone.ui.common.formatDate
 import com.mpernow.workdone.ui.common.formatDateTime
 import com.mpernow.workdone.ui.workout.AddExerciseButton
 import com.mpernow.workdone.ui.workout.EditSetDialog
+import com.mpernow.workdone.ui.workout.BlockKey
 import com.mpernow.workdone.ui.workout.ExerciseBlock
 import com.mpernow.workdone.ui.workout.ExerciseCard
 import com.mpernow.workdone.ui.workout.ExercisePickerSheet
@@ -128,13 +129,17 @@ class WorkoutDetailViewModel(
         viewModelScope.launch { workoutRepository.saveWorkout(workout) }
     }
 
-    fun addExercise(exerciseId: Long) = editor.addExercise(exerciseId)
-
-    fun updateDraft(exerciseId: Long, draft: SetDraft) = editor.updateDraft(exerciseId, draft)
-
-    fun addSet(exerciseId: Long) {
+    /** Adds the exercise, or another entry of it if it's already in the workout. */
+    fun addExercise(exerciseId: Long) {
         val state = uiState.value as? WorkoutDetailUiState.Loaded ?: return
-        val block = state.blocks.firstOrNull { it.exercise.id == exerciseId } ?: return
+        editor.addExercise(exerciseId, state.blocks)
+    }
+
+    fun updateDraft(key: BlockKey, draft: SetDraft) = editor.updateDraft(key, draft)
+
+    fun addSet(key: BlockKey) {
+        val state = uiState.value as? WorkoutDetailUiState.Loaded ?: return
+        val block = state.blocks.firstOrNull { it.key == key } ?: return
         viewModelScope.launch { editor.addSet(state.workout.id, block, state.weightUnit) }
     }
 
@@ -231,12 +236,12 @@ private fun WorkoutDetail(
                     }
                 }
             }
-            items(state.blocks, key = { it.exercise.id }) { block ->
+            items(state.blocks, key = { it.key.listKey }) { block ->
                 ExerciseCard(
                     block = block,
                     unit = state.weightUnit,
-                    onDraftChange = { viewModel.updateDraft(block.exercise.id, it) },
-                    onAddSet = { viewModel.addSet(block.exercise.id) },
+                    onDraftChange = { viewModel.updateDraft(block.key, it) },
+                    onAddSet = { viewModel.addSet(block.key) },
                     onEditSet = { editingSetId = it.id },
                     onDeleteSet = viewModel::deleteSet,
                 )

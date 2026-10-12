@@ -59,10 +59,11 @@ class WorkoutRepository(
     /** Deleting a workout also deletes its sets (foreign key cascade). */
     suspend fun deleteWorkout(workout: WorkoutEntity) = workoutDao.delete(workout)
 
-    suspend fun addSet(workoutId: Long, exerciseId: Long, values: SetValues): Long =
+    suspend fun addSet(workoutId: Long, exerciseId: Long, entry: Int, values: SetValues): Long =
         setEntryDao.insertAtEnd(
             workoutId = workoutId,
             exerciseId = exerciseId,
+            entry = entry,
             reps = values.reps,
             weightKg = values.weightKg,
             durationSeconds = values.durationSeconds,
@@ -72,6 +73,10 @@ class WorkoutRepository(
             resistance = values.resistance,
             strokeRate = values.strokeRate,
         )
+
+    /** Adds [sets] as a new, separate entry of the exercise, e.g. a row read from a photo. */
+    suspend fun addEntry(workoutId: Long, exerciseId: Long, sets: List<SetValues>) =
+        setEntryDao.insertEntry(workoutId, exerciseId, sets)
 
     suspend fun saveSet(set: SetEntryEntity): Long =
         if (set.id == 0L) setEntryDao.insert(set) else set.id.also { setEntryDao.update(set) }

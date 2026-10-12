@@ -146,12 +146,12 @@ private fun ActiveWorkout(
                         }
                     }
                 }
-                items(state.blocks, key = { it.exercise.id }) { block ->
+                items(state.blocks, key = { it.key.listKey }) { block ->
                     ExerciseCard(
                         block = block,
                         unit = state.weightUnit,
-                        onDraftChange = { viewModel.updateDraft(block.exercise.id, it) },
-                        onAddSet = { viewModel.addSet(block.exercise.id) },
+                        onDraftChange = { viewModel.updateDraft(block.key, it) },
+                        onAddSet = { viewModel.addSet(block.key) },
                         onEditSet = { editingSetId = it.id },
                         onDeleteSet = viewModel::deleteSet,
                     )

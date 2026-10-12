@@ -5,7 +5,9 @@ import androidx.room.Delete
 import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
+import com.mpernow.workdone.domain.SetValues
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 
@@ -136,14 +138,14 @@ interface SetEntryDao {
     )
     suspend fun lastForExercise(exerciseId: Long): SetEntryEntity?
 
-    /** One row per exercise in each workout, for the history list. */
+    /** One row per exercise entry in each workout, for the history list. */
     @Query(
         """
         SELECT s.workoutId AS workoutId, e.name AS exerciseName,
                COUNT(*) AS setCount, MIN(s.position) AS firstPosition
         FROM set_entries s
         JOIN exercises e ON e.id = s.exerciseId
-        GROUP BY s.workoutId, s.exerciseId
+        GROUP BY s.workoutId, s.exerciseId, s.entry
         """
     )
     fun observeExerciseSummaries(): Flow<List<WorkoutExerciseSummary>>
@@ -158,11 +160,11 @@ interface SetEntryDao {
     @Query(
         """
         INSERT INTO set_entries (
-            workoutId, exerciseId, position, reps, weightKg, durationSeconds, distanceMeters,
+            workoutId, exerciseId, entry, position, reps, weightKg, durationSeconds, distanceMeters,
             restSeconds, splitSeconds, resistance, strokeRate
         )
         VALUES (
-            :workoutId, :exerciseId,
+            :workoutId, :exerciseId, :entry,
             (SELECT COALESCE(MAX(position), -1) + 1 FROM set_entries WHERE workoutId = :workoutId),
             :reps, :weightKg, :durationSeconds, :distanceMeters, :restSeconds, :splitSeconds, :resistance, :strokeRate
         )
@@ -179,7 +181,33 @@ interface SetEntryDao {
         splitSeconds: Double? = null,
         resistance: Int? = null,
         strokeRate: Int? = null,
+        entry: Int = 0,
     ): Long
+
+    /** The entry number for the exercise's next separate entry in the workout. */
+    @Query("SELECT COALESCE(MAX(entry), -1) + 1 FROM set_entries WHERE workoutId = :workoutId AND exerciseId = :exerciseId")
+    suspend fun nextEntry(workoutId: Long, exerciseId: Long): Int
+
+    /** Adds [sets] to the end of the workout as a new entry of the exercise. */
+    @Transaction
+    suspend fun insertEntry(workoutId: Long, exerciseId: Long, sets: List<SetValues>) {
+        val entry = nextEntry(workoutId, exerciseId)
+        sets.forEach { values ->
+            insertAtEnd(
+                workoutId = workoutId,
+                exerciseId = exerciseId,
+                reps = values.reps,
+                weightKg = values.weightKg,
+                durationSeconds = values.durationSeconds,
+                distanceMeters = values.distanceMeters,
+                restSeconds = values.restSeconds,
+                splitSeconds = values.splitSeconds,
+                resistance = values.resistance,
+                strokeRate = values.strokeRate,
+                entry = entry,
+            )
+        }
+    }
 
     @Insert
     suspend fun insert(set: SetEntryEntity): Long

@@ -32,8 +32,11 @@ enum class ProgressMetric(
     STROKE_RATE("Rate", null, MetricKind.STROKE_RATE),
 }
 
-/** All sets of one exercise in one workout. */
-data class ExerciseSession(val workoutId: Long, val date: LocalDate, val sets: List<SetValues>)
+/** A set of an exercise, with the workout and entry it was logged in. */
+data class LoggedSet(val workoutId: Long, val entry: Int, val date: LocalDate, val values: SetValues)
+
+/** The sets of one exercise in one workout, or in one entry of it; see [Progress.sessions]. */
+data class ExerciseSession(val workoutId: Long, val date: LocalDate, val sets: List<SetValues>, val entry: Int = 0)
 
 data class ProgressPoint(val workoutId: Long, val date: LocalDate, val value: Double)
 
@@ -43,9 +46,42 @@ object Progress {
         TrackingType.REPS -> listOf(ProgressMetric.BEST_SET_REPS, ProgressMetric.TOTAL_REPS)
         TrackingType.DURATION -> listOf(ProgressMetric.LONGEST_SET, ProgressMetric.TOTAL_TIME)
         TrackingType.DISTANCE_TIME -> listOf(ProgressMetric.DISTANCE, ProgressMetric.PACE, ProgressMetric.TOTAL_TIME)
-        TrackingType.INTERVALS_TIME, TrackingType.INTERVALS_DISTANCE, TrackingType.DISTANCE_SPLITS ->
+        TrackingType.INTERVALS_TIME, TrackingType.INTERVALS_DISTANCE ->
             listOf(ProgressMetric.AVERAGE_SPLIT, ProgressMetric.BEST_SPLIT, ProgressMetric.DISTANCE, ProgressMetric.STROKE_RATE)
+        // Workouts are compared at one distance at a time, so distance itself isn't a metric.
+        TrackingType.DISTANCE_SPLITS -> listOf(ProgressMetric.AVERAGE_SPLIT, ProgressMetric.BEST_SPLIT, ProgressMetric.STROKE_RATE)
     }
+
+    /**
+     * Groups an exercise's sets into sessions, in the order of [sets]: one per workout, or one
+     * per entry for types that are compared by distance, so two separate 2 km rows in one
+     * workout stay two 2 km rows.
+     */
+    fun sessions(sets: List<LoggedSet>, type: TrackingType): List<ExerciseSession> =
+        sets.groupBy { it.workoutId to if (filtersByDistance(type)) it.entry else 0 }
+            .map { (key, entrySets) ->
+                ExerciseSession(key.first, entrySets.first().date, entrySets.map { it.values }, key.second)
+            }
+
+    /** Whether workouts of [type] are only compared with others of the same total distance. */
+    fun filtersByDistance(type: TrackingType): Boolean = type == TrackingType.DISTANCE_SPLITS
+
+    /** The workout's total distance in whole metres, or null if none of its sets have one. */
+    fun totalMeters(sets: List<SetValues>): Int? = sessionValue(sets, ProgressMetric.DISTANCE)?.roundToInt()
+
+    /**
+     * Each session's total distance, in the order of [sessions]. A session's sets add up to one
+     * distance, so 4 × 500 m splits are one 2 km row.
+     */
+    fun distances(sessions: List<ExerciseSession>): List<Int> = sessions.mapNotNull { totalMeters(it.sets) }
+
+    /** The sessions whose total distance is [meters]. */
+    fun atDistance(sessions: List<ExerciseSession>, meters: Int): List<ExerciseSession> =
+        sessions.filter { totalMeters(it.sets) == meters }
+
+    /** "500 m", "2 km", "21.1 km". */
+    fun formatTotalDistance(meters: Int): String =
+        if (meters < 1000) "$meters m" else "${SetInput.formatDecimal(Math.round(meters / 100.0) / 10.0)} km"
 
     /** The metric's value for one workout, or null if none of its sets have the needed fields. */
     fun sessionValue(sets: List<SetValues>, metric: ProgressMetric): Double? = when (metric) {

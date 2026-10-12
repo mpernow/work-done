@@ -87,6 +87,25 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate5To6PutsExistingSetsInTheFirstEntry() {
+        helper.createDatabase(DB_NAME, 5).use { db ->
+            db.execSQL("INSERT INTO exercises (id, name, trackingType) VALUES (1, 'Rowing', 'DISTANCE_SPLITS')")
+            db.execSQL("INSERT INTO workouts (id, startedAt, notes) VALUES (1, 1759312800000, '')")
+            db.execSQL(
+                "INSERT INTO set_entries (workoutId, exerciseId, position, distanceMeters, splitSeconds) VALUES (1, 1, 0, 500.0, 104.5)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(DB_NAME, 6, true).use { db ->
+            db.query("SELECT splitSeconds, entry FROM set_entries").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(104.5, cursor.getDouble(0), 1e-9)
+                assertEquals(0, cursor.getInt(1))
+            }
+        }
+    }
+
     private companion object {
         const val DB_NAME = "migration-test"
     }

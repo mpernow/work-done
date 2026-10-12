@@ -108,4 +108,46 @@ class ProgressTest {
         assertEquals(5100.0 / 210, Progress.sessionValue(sets, ProgressMetric.STROKE_RATE)!!, 1e-9)
         assertNull(ProgressMetric.STROKE_RATE.recordLabel)
     }
+
+    @Test
+    fun singleDistancesAreGroupedByTotalDistance() {
+        val sets = listOf(SetValues(distanceMeters = 500.0, splitSeconds = 110.0), SetValues(distanceMeters = 1499.6, splitSeconds = 112.0))
+        assertEquals(2000, Progress.totalMeters(sets))
+        assertNull(Progress.totalMeters(listOf(SetValues(splitSeconds = 110.0))))
+        assertEquals("500 m", Progress.formatTotalDistance(500))
+        assertEquals("2 km", Progress.formatTotalDistance(2000))
+        assertEquals("21.1 km", Progress.formatTotalDistance(21097))
+    }
+
+    @Test
+    fun splitsOfOneEntryAddUpButSeparateEntriesDoNot() {
+        fun split(workoutId: Long, entry: Int, meters: Double) =
+            LoggedSet(workoutId, entry, LocalDate.of(2026, 10, workoutId.toInt()), SetValues(distanceMeters = meters, splitSeconds = 110.0))
+        val sets = listOf(
+            // Two separate 2 km rows in one workout.
+            split(1, 0, 1000.0), split(1, 0, 1000.0),
+            split(1, 1, 1000.0), split(1, 1, 1000.0),
+            // A 2 km row in another workout.
+            split(2, 0, 1000.0), split(2, 0, 1000.0),
+            // Two 2 km splits of one 4 km row.
+            split(3, 0, 2000.0), split(3, 0, 2000.0),
+        )
+        val sessions = Progress.sessions(sets, TrackingType.DISTANCE_SPLITS)
+
+        assertEquals(listOf(2000, 2000, 2000, 4000), Progress.distances(sessions))
+        assertEquals(listOf(1L to 0, 1L to 1, 2L to 0), Progress.atDistance(sessions, 2000).map { it.workoutId to it.entry })
+        assertEquals(listOf(3L), Progress.atDistance(sessions, 4000).map { it.workoutId })
+    }
+
+    @Test
+    fun otherTypesAddUpAllEntriesOfAWorkout() {
+        val sets = listOf(
+            LoggedSet(1, 0, LocalDate.of(2026, 10, 1), SetValues(reps = 5, weightKg = 100.0)),
+            LoggedSet(1, 1, LocalDate.of(2026, 10, 1), SetValues(reps = 5, weightKg = 100.0)),
+        )
+        val sessions = Progress.sessions(sets, TrackingType.WEIGHT_REPS)
+
+        assertEquals(1, sessions.size)
+        assertEquals(1000.0, Progress.sessionValue(sessions.single().sets, ProgressMetric.VOLUME))
+    }
 }

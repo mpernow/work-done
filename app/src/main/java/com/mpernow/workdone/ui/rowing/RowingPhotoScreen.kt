@@ -192,7 +192,7 @@ class RowingPhotoViewModel(
         val review = _state.value as? RowingPhotoUi.Review ?: return
         val values = review.rows.map { parse(review, it.draft) ?: return }
         viewModelScope.launch {
-            values.forEach { workoutRepository.addSet(workoutId, exerciseId, it) }
+            workoutRepository.addEntry(workoutId, exerciseId, values)
             val photoDate = review.photoDate
             if (review.useDate && photoDate != null && photoDate != review.workoutDate) moveWorkoutTo(photoDate)
             _state.value = RowingPhotoUi.Saved

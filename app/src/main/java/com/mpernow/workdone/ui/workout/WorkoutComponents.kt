@@ -65,7 +65,10 @@ fun ExerciseCard(
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp)) {
-            Text(block.exercise.name, style = MaterialTheme.typography.titleMedium)
+            Text(
+                block.number?.let { "${block.exercise.name} ($it)" } ?: block.exercise.name,
+                style = MaterialTheme.typography.titleMedium,
+            )
             block.sets.forEachIndexed { index, set ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -295,6 +298,7 @@ fun ExercisePickerSheet(
                     headlineContent = { Text(exercise.name) },
                     supportingContent = { Text(exercise.trackingType.label) },
                     trailingContent = {
+                        // Picking it again adds another entry.
                         if (exercise.id in alreadyAdded) Icon(Icons.Filled.Check, contentDescription = "In this workout")
                     },
                     modifier = Modifier.clickable { onPick(exercise.id) },

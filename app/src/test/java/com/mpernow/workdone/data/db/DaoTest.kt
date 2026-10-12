@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.mpernow.workdone.domain.SetValues
 import com.mpernow.workdone.domain.TrackingType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -199,5 +200,21 @@ class DaoTest {
         assertEquals(90, saved.restSeconds)
         assertEquals(112.4, saved.splitSeconds!!, 1e-9)
         assertEquals(6, saved.resistance)
+    }
+
+    @Test
+    fun insertEntryAddsASeparateEntryOfTheExercise() = runTest {
+        val rowing = exercises.insert(ExerciseEntity(name = "Rowing", trackingType = TrackingType.DISTANCE_SPLITS))
+        val workoutId = workouts.insert(WorkoutEntity(startedAt = Instant.now()))
+        val twoKm = List(4) { SetValues(distanceMeters = 500.0, splitSeconds = 110.0) }
+        sets.insertEntry(workoutId, rowing, twoKm)
+        sets.insertEntry(workoutId, rowing, twoKm)
+
+        val saved = sets.observeForWorkout(workoutId).first()
+        assertEquals(List(4) { 0 } + List(4) { 1 }, saved.map { it.entry })
+        assertEquals((0..7).toList(), saved.map { it.position })
+        assertEquals(2, sets.nextEntry(workoutId, rowing))
+        // The history lists the two rows separately.
+        assertEquals(listOf(4, 4), sets.observeExerciseSummaries().first().map { it.setCount })
     }
 }

@@ -1,5 +1,6 @@
 package com.mpernow.workdone.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -52,6 +53,11 @@ data class SetEntryEntity(
     val exerciseId: Long,
     /** Order of the set within its workout. */
     val position: Int,
+    /**
+     * Which time the exercise was added to the workout, counting from 0. A second, separate
+     * piece of the same exercise, like another 2 km row, is a new entry rather than more sets.
+     */
+    @ColumnInfo(defaultValue = "0") val entry: Int = 0,
     val reps: Int? = null,
     val weightKg: Double? = null,
     val durationSeconds: Int? = null,

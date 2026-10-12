@@ -14,6 +14,7 @@ import com.mpernow.workdone.domain.SetValues
 import com.mpernow.workdone.domain.WeightUnit
 import com.mpernow.workdone.domain.WorkoutDates
 import com.mpernow.workdone.domain.usesSplits
+import com.mpernow.workdone.ui.workout.BlockKey
 import com.mpernow.workdone.ui.workout.ExerciseBlock
 import com.mpernow.workdone.ui.workout.WorkoutSetsEditor
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -77,14 +78,18 @@ class LogWorkoutViewModel(
         viewModelScope.launch { workoutRepository.saveWorkout(state.workout.copy(startedAt = startedAt)) }
     }
 
-    fun addExercise(exerciseId: Long) = editor.addExercise(exerciseId)
+    /** Adds the exercise, or another entry of it if it's already in the workout. */
+    fun addExercise(exerciseId: Long) {
+        val state = uiState.value as? LogUiState.Active ?: return
+        editor.addExercise(exerciseId, state.blocks)
+    }
 
-    fun updateDraft(exerciseId: Long, draft: SetDraft) = editor.updateDraft(exerciseId, draft)
+    fun updateDraft(key: BlockKey, draft: SetDraft) = editor.updateDraft(key, draft)
 
     /** Logs the exercise's input as a set and starts the rest timer, except for backdated workouts and rowing-machine types. */
-    fun addSet(exerciseId: Long) {
+    fun addSet(key: BlockKey) {
         val state = uiState.value as? LogUiState.Active ?: return
-        val block = state.blocks.firstOrNull { it.exercise.id == exerciseId } ?: return
+        val block = state.blocks.firstOrNull { it.key == key } ?: return
         viewModelScope.launch {
             if (!editor.addSet(state.workout.id, block, state.weightUnit)) return@launch
             if (WorkoutDates.isBackdated(state.workout.startedAt, Instant.now())) return@launch
