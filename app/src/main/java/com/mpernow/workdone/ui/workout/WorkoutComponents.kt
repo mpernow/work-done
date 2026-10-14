@@ -35,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -231,6 +232,17 @@ internal fun DigitTimeField(
     )
 }
 
+/** Saves a [SetDraft] in a Bundle as its fields, in declaration order. */
+private val SetDraftSaver = listSaver<SetDraft, String>(
+    save = {
+        listOf(
+            it.weight, it.reps, it.minutes, it.seconds, it.distanceKm, it.workTime,
+            it.distanceMeters, it.split, it.rest, it.resistance, it.strokeRate,
+        )
+    },
+    restore = { SetDraft(it[0], it[1], it[2], it[3], it[4], it[5], it[6], it[7], it[8], it[9], it[10]) },
+)
+
 @Composable
 fun EditSetDialog(
     set: SetEntryEntity,
@@ -239,7 +251,9 @@ fun EditSetDialog(
     onSave: (SetValues) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var draft by rememberSaveable(set.id) { mutableStateOf(SetInput.draftFrom(set.toValues(), unit)) }
+    var draft by rememberSaveable(set.id, stateSaver = SetDraftSaver) {
+        mutableStateOf(SetInput.draftFrom(set.toValues(), unit))
+    }
     val values = SetInput.parse(draft, exercise.trackingType, unit)
     AlertDialog(
         onDismissRequest = onDismiss,

@@ -130,7 +130,7 @@ private fun rememberGuideline() = rememberAxisGuidelineComponent(
 )
 
 @Composable
-private fun rememberTooltip(text: (x: Double) -> String): CartesianMarker {
+private fun rememberTooltip(text: (extras: ExtraStore, x: Double) -> String): CartesianMarker {
     val colors = MaterialTheme.colorScheme
     val currentText by rememberUpdatedState(text)
     val label = rememberTextComponent(
@@ -140,7 +140,7 @@ private fun rememberTooltip(text: (x: Double) -> String): CartesianMarker {
     )
     return rememberDefaultCartesianMarker(
         label = label,
-        valueFormatter = remember { DefaultCartesianMarker.ValueFormatter { _, targets -> currentText(targets.first().x) } },
+        valueFormatter = remember { DefaultCartesianMarker.ValueFormatter { context, targets -> currentText(context.model.extraStore, targets.first().x) } },
         guideline = rememberAxisLineComponent(fill = Fill(colors.outline), thickness = 1.dp),
     )
 }
@@ -207,7 +207,7 @@ fun ProgressLineChart(
                         HorizontalAxis.ItemPlacer.aligned(spacing = { it.getOrNull(LabelSpacingKey) ?: 1 })
                     },
                 ),
-                marker = rememberTooltip { x -> tooltip(xs.indexOf(x.toLong()).coerceAtLeast(0)) },
+                marker = rememberTooltip { _, x -> tooltip(xs.indexOf(x.toLong()).coerceAtLeast(0)) },
                 // Room for the first and last dots, which would otherwise be cut in half at the edges.
                 layerPadding = { CartesianLayerPadding(unscalableStart = 8.dp, unscalableEnd = 8.dp) },
                 getXStep = { _, _, _ -> 1.0 },
@@ -220,27 +220,39 @@ fun ProgressLineChart(
     }
 }
 
-/** One column per week, oldest on the left. Press and hold a column to read it. */
+/**
+ * The bottom-axis labels and tooltips of a column chart, one per column. They're stored with
+ * the data, since the model is replaced asynchronously: read from the composition instead,
+ * they could briefly disagree with the columns on screen.
+ */
+private val ColumnLabelsKey = ExtraStore.Key<List<String>>()
+private val ColumnTooltipsKey = ExtraStore.Key<List<String>>()
+
+/**
+ * One column per week, oldest on the left, with one [xLabels] and [tooltips] entry per value.
+ * Press and hold a column to read it.
+ */
 @Composable
 fun WeeklyColumnChart(
     values: List<Double>,
     axisSteps: AxisSteps,
-    xLabel: (index: Int) -> String,
+    xLabels: List<String>,
     yLabel: (Double) -> String,
-    tooltip: (index: Int) -> String,
+    tooltips: List<String>,
     modifier: Modifier = Modifier,
 ) {
     val producer = remember { CartesianChartModelProducer() }
-    LaunchedEffect(values) {
+    LaunchedEffect(values, xLabels, tooltips) {
         producer.runTransaction {
             columnModel { series(values) }
             extras {
                 it[LabelSpacingKey] = labelSpacing((values.size - 1).toDouble())
                 it[YStepKey] = niceStep(values.max(), axisSteps)
+                it[ColumnLabelsKey] = xLabels
+                it[ColumnTooltipsKey] = tooltips
             }
         }
     }
-    val currentXLabel by rememberUpdatedState(xLabel)
     val currentYLabel by rememberUpdatedState(yLabel)
     val color = MaterialTheme.colorScheme.primary
     ChartTheme {
@@ -262,13 +274,15 @@ fun WeeklyColumnChart(
                     itemPlacer = remember { VerticalAxis.ItemPlacer.step(step = { it.getOrNull(YStepKey) }) },
                 ),
                 bottomAxis = HorizontalAxis.rememberBottom(
-                    valueFormatter = remember { CartesianValueFormatter { _, value, _ -> currentXLabel(value.toInt()) } },
+                    valueFormatter = remember {
+                        CartesianValueFormatter { context, value, _ -> context.model.extraStore[ColumnLabelsKey][value.toInt()] }
+                    },
                     guideline = null,
                     itemPlacer = remember {
                         HorizontalAxis.ItemPlacer.aligned(spacing = { it.getOrNull(LabelSpacingKey) ?: 1 })
                     },
                 ),
-                marker = rememberTooltip { x -> tooltip(x.toInt()) },
+                marker = rememberTooltip { extras, x -> extras[ColumnTooltipsKey][x.toInt()] },
             ),
             modelProducer = producer,
             modifier = modifier.fillMaxWidth(),

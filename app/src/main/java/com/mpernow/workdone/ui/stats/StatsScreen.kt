@@ -157,9 +157,9 @@ private fun WorkoutsPerWeek(ui: StatsUi, weekLabels: List<String>) {
         WeeklyColumnChart(
             values = counts.map { it.toDouble() },
             axisSteps = AxisSteps.INTEGER,
-            xLabel = { weekLabels.getOrElse(it) { "" } },
+            xLabels = weekLabels,
             yLabel = { "${it.toInt()}" },
-            tooltip = { index -> "Week of ${weekLabels[index]} · ${counts[index]}" },
+            tooltips = weekLabels.zip(counts) { week, count -> "Week of $week · $count" },
         )
     }
 }
@@ -179,9 +179,9 @@ private fun VolumePerWeek(ui: StatsUi, weekLabels: List<String>) {
             WeeklyColumnChart(
                 values = volumes,
                 axisSteps = AxisSteps.DECIMAL,
-                xLabel = { weekLabels.getOrElse(it) { "" } },
+                xLabels = weekLabels,
                 yLabel = { Progress.formatAxis(it, MetricKind.WEIGHT) },
-                tooltip = { index -> "Week of ${weekLabels[index]} · ${Progress.compactNumber(volumes[index])} $unit" },
+                tooltips = weekLabels.zip(volumes) { week, volume -> "Week of $week · ${Progress.compactNumber(volume)} $unit" },
             )
         }
     }
