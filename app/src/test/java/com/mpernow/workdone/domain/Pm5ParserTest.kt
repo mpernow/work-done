@@ -50,6 +50,33 @@ class Pm5ParserTest {
     }
 
     @Test
+    fun joinsRealPhotosOfAScrolledScreenDespiteAMisreadRate() {
+        // Rows 1–8, then 3–9 and the rest distance ("r188"); the tenth wasn't in view. The first
+        // photo has "B0" for the fourth row's rate of 30, and "i:30r" in the workout.
+        val result = Pm5Parser.parsePhotos(listOf(fixture("intervals_time_part1.tsv"), fixture("intervals_time_part2.tsv")))
+
+        assertEquals(Pm5Workout.TimeIntervals(count = 10, workSeconds = 60, restSeconds = 90), result.workout)
+        assertEquals(listOf(299, 298, 296, 292, 292, 295, 292, 294, 289), result.rows.map { it.meters })
+        assertEquals(listOf(31, 31, 31, 30, 30, 31, 30, 31, 30), result.rows.map { it.strokeRate })
+        assertTrue(result.rows.all { it.problem == null })
+        assertEquals(
+            listOf("Found 9 of 10 intervals", "The rows add up to 9:00.0, but the total says 10:00.0"),
+            result.problems,
+        )
+    }
+
+    @Test
+    fun readsRealPhotoOfASingleTime() {
+        val result = Pm5Parser.parse(fixture("single_time.tsv"))
+
+        assertEquals(Pm5Workout.SingleTime(600), result.workout)
+        assertEquals(listOf(465, 470, 474, 478, 484), result.rows.map { it.meters })
+        assertEquals(List(5) { 120.0 }, result.rows.map { it.timeSeconds })
+        assertEquals(listOf(20, 22, 21, 22, 23), result.rows.map { it.strokeRate })
+        assertEquals(emptyList<String>(), result.problems)
+    }
+
+    @Test
     fun readsASingleTime() {
         // The screen from a 10:00 piece: running times, but each split's own distance.
         val words = row(1300, "10:00") + row(1450, "Oct", "16", "2026") + header +
@@ -83,6 +110,79 @@ class Pm5ParserTest {
         val result = Pm5Parser.parse(words)
 
         assertEquals(listOf("The splits add up to 872 m, but the total says 950 m"), result.problems)
+    }
+
+    /** A photo of a "10x1:00/1:30r" screen showing the given intervals' metres, splits and rates. */
+    private fun tenMinuteIntervals(vararg rows: Triple<String, String, String>): List<OcrWord> =
+        row(1300, "10x1:00/1:30r") + row(1450, "Oct", "16", "2026") + header +
+            row(1850, "10:00.0", "2941", "1:42.0", "30") +
+            rows.flatMapIndexed { i, (meters, split, rate) -> row(2000 + i * 130, "1:00.0", meters, split, rate) }
+
+    private val tenIntervals = listOf(
+        Triple("299", "1:40.3", "31"), Triple("298", "1:40.6", "31"), Triple("296", "1:41.3", "31"),
+        Triple("292", "1:42.7", "30"), Triple("292", "1:42.7", "30"), Triple("295", "1:41.6", "31"),
+        Triple("292", "1:42.7", "30"), Triple("294", "1:42.0", "31"), Triple("289", "1:43.8", "30"),
+        Triple("294", "1:42.0", "31"),
+    )
+
+    @Test
+    fun joinsPhotosOfAScrolledScreenWhereTheirRowsOverlap() {
+        val first = tenMinuteIntervals(*tenIntervals.subList(0, 8).toTypedArray())
+        val second = tenMinuteIntervals(*tenIntervals.subList(3, 10).toTypedArray())
+
+        val result = Pm5Parser.parsePhotos(listOf(first, second))
+
+        assertEquals(tenIntervals.map { it.first.toInt() }, result.rows.map { it.meters })
+        assertEquals(List(10) { 60.0 }, result.rows.map { it.timeSeconds })
+        assertEquals(emptyList<String>(), result.problems)
+    }
+
+    @Test
+    fun saysWhenThePhotosStillMissTheLastIntervals() {
+        // Two real photos: rows 1–8, then 3–9 and the rest distance ("r188"); the tenth wasn't in view.
+        val first = tenMinuteIntervals(*tenIntervals.subList(0, 8).toTypedArray())
+        val second = tenMinuteIntervals(*tenIntervals.subList(2, 9).toTypedArray()) + row(2910, "r188")
+
+        val result = Pm5Parser.parsePhotos(listOf(first, second))
+
+        assertEquals(tenIntervals.take(9).map { it.first.toInt() }, result.rows.map { it.meters })
+        assertTrue("Found 9 of 10 intervals" in result.problems)
+    }
+
+    @Test
+    fun takesValuesMisreadInOnePhotoFromTheOther() {
+        val first = tenMinuteIntervals(*tenIntervals.subList(0, 7).toTypedArray(), Triple("294", "1:4?", "31"))
+        val second = tenMinuteIntervals(*tenIntervals.subList(7, 10).toTypedArray())
+
+        val result = Pm5Parser.parsePhotos(listOf(first, second))
+
+        assertEquals(10, result.rows.size)
+        assertEquals(102.0, result.rows[7].splitSeconds!!, 1e-9)
+        assertTrue(result.rows.all { it.problem == null })
+    }
+
+    @Test
+    fun joinsRunningTotalsOfASingleDistanceBeforeTakingTheirDifferences() {
+        fun photo(range: IntRange) = row(1300, "5000m") + header +
+            row(1850, "17:30.0", "5000", "1:45.0", "28") +
+            range.mapIndexed { i, split -> row(2000 + i * 130, "1:45.0", "${split * 500}", "1:45.0", "28") }.flatten()
+
+        val result = Pm5Parser.parsePhotos(listOf(photo(1..8), photo(3..10)))
+
+        assertEquals(List(10) { 500 }, result.rows.map { it.meters })
+        assertEquals(emptyList<String>(), result.problems)
+    }
+
+    @Test
+    fun saysWhenPhotosHaveNoRowsInCommon() {
+        fun photo(vararg splits: String) = row(1300, "4x500m/2:00r") + header +
+            row(1850, "7:00.0", "2000", "1:45.0", "28") +
+            splits.mapIndexed { i, split -> row(2000 + i * 130, split, "500", split, "28") }.flatten()
+
+        val result = Pm5Parser.parsePhotos(listOf(photo("1:44.0", "1:45.0", "1:46.0"), photo("1:47.0", "1:48.0", "1:49.0")))
+
+        assertEquals(6, result.rows.size)
+        assertTrue(result.problems.any { it.startsWith("Couldn't tell where photo 2 carries on from photo 1") })
     }
 
     @Test

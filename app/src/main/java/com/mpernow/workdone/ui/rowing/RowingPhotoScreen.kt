@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
@@ -63,8 +65,10 @@ import com.mpernow.workdone.data.ocr.PhotoTextReader
 import com.mpernow.workdone.data.repository.ExerciseRepository
 import com.mpernow.workdone.data.repository.WorkoutRepository
 import com.mpernow.workdone.domain.DigitTime
+import com.mpernow.workdone.domain.OcrWord
 import com.mpernow.workdone.domain.Pm5Import
 import com.mpernow.workdone.domain.Pm5Parser
+import com.mpernow.workdone.domain.Pm5Result
 import com.mpernow.workdone.domain.Pm5Workout
 import com.mpernow.workdone.domain.SetDraft
 import com.mpernow.workdone.domain.SetInput
@@ -99,7 +103,10 @@ sealed interface RowingPhotoUi {
     data class Reading(val photo: Uri) : RowingPhotoUi
     data class Failed(val photo: Uri, val message: String) : RowingPhotoUi
     data class Review(
-        val photo: Uri,
+        /** Photos of the same screen, scrolled further down in each when it didn't fit on one. */
+        val photos: List<Uri>,
+        /** Why the last photo added couldn't be used, if it couldn't. */
+        val photoMessage: String?,
         val workout: Pm5Workout,
         val trackingType: TrackingType,
         val rows: List<ImportRow>,
@@ -129,45 +136,68 @@ class RowingPhotoViewModel(
     private val _state = MutableStateFlow<RowingPhotoUi>(RowingPhotoUi.ChoosePhoto)
     val state: StateFlow<RowingPhotoUi> = _state.asStateFlow()
 
+    /** The photos read so far, with the words recognised in each. */
+    private var screens: List<Pair<Uri, List<OcrWord>>> = emptyList()
+
+    /** Starts over with [photo]. */
     fun readPhoto(photo: Uri) {
+        screens = emptyList()
+        read(photo, previous = null)
+    }
+
+    /** Adds [photo] of the rest of the screen, for workouts that don't fit on one. */
+    fun addPhoto(photo: Uri) {
+        val review = _state.value as? RowingPhotoUi.Review ?: return
+        read(photo, review)
+    }
+
+    private fun read(photo: Uri, previous: RowingPhotoUi.Review?) {
         _state.value = RowingPhotoUi.Reading(photo)
         viewModelScope.launch {
             _state.value = try {
-                val result = Pm5Parser.parse(textReader.read(photo))
+                val words = textReader.read(photo)
+                val result = Pm5Parser.parsePhotos(screens.map { it.second } + listOf(words))
                 val workout = result.workout
-                if (workout == null || result.rows.isEmpty()) {
-                    RowingPhotoUi.Failed(
-                        photo,
-                        "Couldn't read a results table. Take the photo straight on, with the whole " +
-                            "\"View Detail\" screen in view and as little glare as possible.",
-                    )
+                if (workout == null || Pm5Parser.parse(words).rows.isEmpty()) {
+                    val message = "Couldn't read a results table. Take the photo straight on, with the whole " +
+                        "\"View Detail\" screen in view and as little glare as possible."
+                    previous?.copy(photoMessage = message) ?: RowingPhotoUi.Failed(photo, message)
                 } else {
-                    val values = Pm5Import.toSetValues(workout, result.rows)
-                    val workoutStart = workoutRepository.getWorkout(workoutId)?.startedAt
-                    RowingPhotoUi.Review(
-                        photo = photo,
-                        workout = workout,
-                        trackingType = Pm5Import.trackingType(workout),
-                        rows = values.zip(result.rows) { value, row ->
-                            ImportRow(SetInput.draftFrom(value, WeightUnit.KG), row.problem)
-                        },
-                        problems = result.problems,
-                        rest = Pm5Import.restSeconds(workout)?.let(DigitTime::minSecDigits).orEmpty(),
-                        resistance = "",
-                        exerciseId = null,
-                        photoDate = result.date,
-                        workoutDate = (workoutStart ?: java.time.Instant.now()).atZone(ZoneId.systemDefault()).toLocalDate(),
-                        useDate = true,
-                    )
+                    screens = screens + (photo to words)
+                    review(result, workout, previous)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Reading the photo failed", e)
-                RowingPhotoUi.Failed(photo, "Couldn't read the photo: ${e.message ?: e.javaClass.simpleName}")
+                val message = "Couldn't read the photo: ${e.message ?: e.javaClass.simpleName}"
+                previous?.copy(photoMessage = message) ?: RowingPhotoUi.Failed(photo, message)
             }
         }
     }
 
+    /** The review of everything read so far; choices made in the [previous] review are kept, but not row edits. */
+    private suspend fun review(result: Pm5Result, workout: Pm5Workout, previous: RowingPhotoUi.Review?): RowingPhotoUi.Review {
+        val values = Pm5Import.toSetValues(workout, result.rows)
+        val workoutStart = workoutRepository.getWorkout(workoutId)?.startedAt
+        return RowingPhotoUi.Review(
+            photos = screens.map { it.first },
+            photoMessage = null,
+            workout = workout,
+            trackingType = Pm5Import.trackingType(workout),
+            rows = values.zip(result.rows) { value, row ->
+                ImportRow(SetInput.draftFrom(value, WeightUnit.KG), row.problem)
+            },
+            problems = result.problems,
+            rest = Pm5Import.restSeconds(workout)?.let(DigitTime::minSecDigits).orEmpty(),
+            resistance = previous?.resistance.orEmpty(),
+            exerciseId = previous?.exerciseId,
+            photoDate = result.date,
+            workoutDate = (workoutStart ?: java.time.Instant.now()).atZone(ZoneId.systemDefault()).toLocalDate(),
+            useDate = previous?.useDate ?: true,
+        )
+    }
+
     fun choosePhotoAgain() {
+        screens = emptyList()
         _state.value = RowingPhotoUi.ChoosePhoto
     }
 
@@ -258,8 +288,12 @@ fun RowingPhotoScreen(
     }
 }
 
+/** Starts taking a photo with the camera app, or picking one from the gallery. */
+private class PhotoSource(val take: () -> Unit, val choose: () -> Unit)
+
+/** [firstPhoto] starts a new set of photos, so earlier camera photos are deleted. */
 @Composable
-private fun ChoosePhoto(onPhoto: (Uri) -> Unit, onNavigateUp: () -> Unit) {
+private fun rememberPhotoSource(firstPhoto: Boolean, onPhoto: (Uri) -> Unit): PhotoSource {
     val context = LocalContext.current
     var cameraPhoto by rememberSaveable { mutableStateOf<Uri?>(null) }
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
@@ -268,6 +302,19 @@ private fun ChoosePhoto(onPhoto: (Uri) -> Unit, onNavigateUp: () -> Unit) {
     val pickPicture = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(onPhoto)
     }
+    return PhotoSource(
+        take = {
+            val uri = newCameraPhotoUri(context, deleteOthers = firstPhoto)
+            cameraPhoto = uri
+            takePicture.launch(uri)
+        },
+        choose = { pickPicture.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+    )
+}
+
+@Composable
+private fun ChoosePhoto(onPhoto: (Uri) -> Unit, onNavigateUp: () -> Unit) {
+    val source = rememberPhotoSource(firstPhoto = true, onPhoto)
     AppScaffold("Rowing machine photo", onNavigateUp = onNavigateUp) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).padding(24.dp),
@@ -278,17 +325,11 @@ private fun ChoosePhoto(onPhoto: (Uri) -> Unit, onNavigateUp: () -> Unit) {
                 "Photograph the Concept2 \"View Detail\" screen straight on, with the whole table in view.",
                 style = MaterialTheme.typography.bodyLarge,
             )
-            Button(onClick = {
-                val uri = newCameraPhotoUri(context)
-                cameraPhoto = uri
-                takePicture.launch(uri)
-            }) {
+            Button(onClick = source.take) {
                 Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                 Text("Take photo")
             }
-            OutlinedButton(onClick = {
-                pickPicture.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }) {
+            OutlinedButton(onClick = source.choose) {
                 Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                 Text("Choose photo")
             }
@@ -296,9 +337,14 @@ private fun ChoosePhoto(onPhoto: (Uri) -> Unit, onNavigateUp: () -> Unit) {
     }
 }
 
-/** A file in the cache for the camera app to write to; only the latest photo is kept. */
-private fun newCameraPhotoUri(context: Context): Uri {
-    val file = File(context.cacheDir, "photos/rowing-machine.jpg").apply { parentFile?.mkdirs() }
+/**
+ * A new file in the cache for the camera app to write to. Earlier photos are kept while they're
+ * part of the same workout's photos, and deleted when [deleteOthers] starts a new one.
+ */
+private fun newCameraPhotoUri(context: Context, deleteOthers: Boolean): Uri {
+    val dir = File(context.cacheDir, "photos").apply { mkdirs() }
+    if (deleteOthers) dir.listFiles()?.forEach { it.delete() }
+    val file = File(dir, "rowing-machine-${System.currentTimeMillis()}.jpg")
     return FileProvider.getUriForFile(context, "${context.packageName}.photos", file)
 }
 
@@ -314,6 +360,7 @@ private fun Review(
     val exerciseId = review.exerciseId?.takeIf { id -> matching.any { it.id == id } } ?: matching.singleOrNull()?.id
     val rowsValid = review.rows.all { RowingPhotoViewModel.parse(review, it.draft) != null }
     val canSave = exerciseId != null && rowsValid
+    val photoSource = rememberPhotoSource(firstPhoto = false, viewModel::addPhoto)
 
     AppScaffold(
         title = "Check the results",
@@ -328,9 +375,16 @@ private fun Review(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                PhotoPreview(review.photo, Modifier.fillMaxWidth().height(280.dp))
-                TextButton(onClick = viewModel::choosePhotoAgain) { Text("Use another photo") }
+                if (review.photos.size == 1) {
+                    PhotoPreview(review.photos.single(), Modifier.fillMaxWidth().height(280.dp))
+                } else {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(review.photos) { PhotoPreview(it, Modifier.height(280.dp).width(210.dp)) }
+                    }
+                }
+                TextButton(onClick = viewModel::choosePhotoAgain) { Text("Start over with another photo") }
             }
+            item { MorePhotos(review.photos.size, review.photoMessage, photoSource) }
             item {
                 Text(Pm5Import.describe(review.workout), style = MaterialTheme.typography.titleLarge)
                 Text(
@@ -385,6 +439,33 @@ private fun Review(
                     enabled = canSave,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 ) { Text("Add ${review.rows.size} ${if (review.rows.size == 1) "set" else "sets"} to the workout") }
+            }
+        }
+    }
+}
+
+/** For a workout too long for one screen: more photos of it, scrolled further down. */
+@Composable
+private fun MorePhotos(photoCount: Int, message: String?, source: PhotoSource) {
+    Column {
+        Text(
+            if (photoCount == 1) {
+                "Didn't all the rows fit on the screen? Scroll down on the monitor and add a photo of the rest."
+            } else {
+                "$photoCount photos, joined where their rows overlap. Add another if there are more rows."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (message != null) Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = source.take) {
+                Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                Text("Add photo")
+            }
+            TextButton(onClick = source.choose) {
+                Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                Text("From gallery")
             }
         }
     }

@@ -47,22 +47,123 @@ data class Pm5Result(
  * grouped into lines by their height on the photo, so it doesn't matter how the recogniser
  * splits the screen into blocks. The screen repeats itself (times add up to the total, each
  * time matches its split), which is used to flag misread numbers.
+ *
+ * A long workout doesn't fit on the screen, so it may come as several photos of the same screen
+ * scrolled further down each time; see [parsePhotos] for how they're joined.
  */
 object Pm5Parser {
-    fun parse(words: List<OcrWord>): Pm5Result {
+    fun parse(words: List<OcrWord>): Pm5Result = parsePhotos(listOf(words))
+
+    /**
+     * Reads several photos of one results screen, in order, scrolled further down in each. Each
+     * photo's rows are joined to the rows before at the longest run they have in common, as the
+     * scrolled screen repeats the rows that were already at the bottom. A value misread in one
+     * photo is taken from the other where a row is in both.
+     */
+    fun parsePhotos(photos: List<List<OcrWord>>): Pm5Result {
+        val screens = photos.map(::readScreen)
+        val workout = screens.firstNotNullOfOrNull { it.workout }
+        val date = screens.firstNotNullOfOrNull { it.date }
+        val separated = screens.map { separateTotal(it.rows, workout) }
+        val total = separated.firstNotNullOfOrNull { it.first }
+
+        val joinProblems = mutableListOf<String>()
+        if (screens.mapNotNull { it.workout }.distinct().size > 1 || screens.mapNotNull { it.date }.distinct().size > 1) {
+            joinProblems += "The photos seem to be of different workouts"
+        }
+        var splitRows = separated.firstOrNull()?.second.orEmpty()
+        separated.drop(1).forEachIndexed { index, (_, next) ->
+            val overlap = overlap(splitRows, next, expectedCount(workout))
+            if (overlap == null) {
+                joinProblems += "Couldn't tell where photo ${index + 2} carries on from photo ${index + 1}; " +
+                    "check for rows that are missing or listed twice"
+            }
+            splitRows = join(splitRows, next, overlap ?: 0)
+        }
+
+        val rows = toPerRowTimes(toPerRowDistances(splitRows, total, workout), total, workout).map(::checkRow)
+        return Pm5Result(workout, date, total, rows, joinProblems + overallProblems(workout, total, rows))
+    }
+
+    /** What one photo shows, before its rows are joined with other photos'. */
+    private class Screen(val workout: Pm5Workout?, val date: LocalDate?, val rows: List<Pm5Row>)
+
+    private fun readScreen(words: List<OcrWord>): Screen {
         val lines = groupIntoLines(withoutOutliers(words))
         val lineTexts = lines.map { line -> line.joinToString(" ") { normalizeToken(it.text) } }
-        val workout = lineTexts.firstNotNullOfOrNull(::parseWorkout)
-        val date = lineTexts.firstNotNullOfOrNull(::parseDate)
 
         // The table starts after the column header; without one, try every line.
         val headerIndex = lineTexts.indexOfFirst { it.lowercase().let { t -> "meter" in t || "s/m" in t } }
         val columns = lines.getOrNull(headerIndex)?.let(::findColumns) ?: Columns()
-        val tableRows = lines.drop(headerIndex + 1).mapNotNull { parseRow(it, columns) }
+        return Screen(
+            workout = lineTexts.firstNotNullOfOrNull(::parseWorkout),
+            date = lineTexts.firstNotNullOfOrNull(::parseDate),
+            rows = lines.drop(headerIndex + 1).mapNotNull { parseRow(it, columns) },
+        )
+    }
 
-        val (total, splitRows) = separateTotal(tableRows, workout)
-        val rows = toPerRowTimes(toPerRowDistances(splitRows, total, workout), total, workout).map(::checkRow)
-        return Pm5Result(workout, date, total, rows, overallProblems(workout, total, rows))
+    private fun expectedCount(workout: Pm5Workout?): Int? = when (workout) {
+        is Pm5Workout.DistanceIntervals -> workout.count
+        is Pm5Workout.TimeIntervals -> workout.count
+        else -> null
+    }
+
+    /**
+     * How many rows at the start of [next] repeat the end of [rows]. Rows that match exactly are
+     * preferred over rows that match apart from a misread value. Intervals are often alike, so
+     * when the workout's number of intervals is known, the overlap that gives that number is
+     * preferred; otherwise the longest. Null if no rows match at all, which can also mean that
+     * the photos don't overlap, so the caller can't be sure.
+     */
+    private fun overlap(rows: List<Pm5Row>, next: List<Pm5Row>, expectedCount: Int?): Int? {
+        fun candidates(allowedDifferences: Int) = (minOf(rows.size, next.size) downTo 1).filter { k ->
+            rows.takeLast(k).zip(next.take(k)).all { (a, b) -> differences(a, b) <= allowedDifferences }
+        }
+        val exact = candidates(0)
+        // A digit is sometimes misread ("B0" for 30) in one photo only.
+        val misread = candidates(1)
+        if (expectedCount != null) {
+            val total = { k: Int -> rows.size + next.size - k }
+            (exact + 0).firstOrNull { total(it) == expectedCount }?.let { return it }
+            misread.firstOrNull { total(it) == expectedCount }?.let { return it }
+        }
+        return exact.firstOrNull() ?: misread.firstOrNull()
+    }
+
+    /** How many values differ between two rows that may be the same one; values that weren't read match anything. */
+    private fun differences(a: Pm5Row, b: Pm5Row): Int {
+        fun <T> differs(x: T?, y: T?, equal: (T, T) -> Boolean) = x != null && y != null && !equal(x, y)
+        val close = { x: Double, y: Double -> abs(x - y) < 0.05 }
+        return listOf(
+            differs(a.timeSeconds, b.timeSeconds, close),
+            differs(a.meters, b.meters) { x, y -> x == y },
+            differs(a.splitSeconds, b.splitSeconds, close),
+            differs(a.strokeRate, b.strokeRate) { x, y -> x == y },
+        ).count { it }
+    }
+
+    /** [rows] followed by [next], where the first [overlap] rows of [next] are already in [rows]. */
+    private fun join(rows: List<Pm5Row>, next: List<Pm5Row>, overlap: Int): List<Pm5Row> {
+        val shared = rows.takeLast(overlap).zip(next.take(overlap), ::combine)
+        return rows.dropLast(overlap) + shared + next.drop(overlap)
+    }
+
+    /**
+     * One row read in two photos: values missing from one are taken from the other, and where
+     * they disagree, the reading that is consistent wins, or else the first photo's.
+     */
+    private fun combine(a: Pm5Row, b: Pm5Row): Pm5Row {
+        fun filled(row: Pm5Row, other: Pm5Row) = Pm5Row(
+            timeSeconds = row.timeSeconds ?: other.timeSeconds,
+            meters = row.meters ?: other.meters,
+            splitSeconds = row.splitSeconds ?: other.splitSeconds,
+            // Checked on its own, as other checks can't be made before running totals are undone.
+            strokeRate = listOfNotNull(row.strokeRate, other.strokeRate).firstOrNull { it in MIN_STROKE_RATE..MAX_STROKE_RATE }
+                ?: row.strokeRate ?: other.strokeRate,
+        )
+        val first = filled(a, b)
+        val second = filled(b, a)
+        return if (checkRow(first).problem != null && checkRow(second).problem == null) second else first
     }
 
     /**
@@ -288,11 +389,7 @@ object Pm5Parser {
             add("Couldn't find the results table")
             return@buildList
         }
-        val expectedCount = when (workout) {
-            is Pm5Workout.DistanceIntervals -> workout.count
-            is Pm5Workout.TimeIntervals -> workout.count
-            else -> null
-        }
+        val expectedCount = expectedCount(workout)
         if (expectedCount != null && rows.size != expectedCount) add("Found ${rows.size} of $expectedCount intervals")
         val totalTime = total?.timeSeconds
         if (totalTime != null && rows.all { it.timeSeconds != null }) {
