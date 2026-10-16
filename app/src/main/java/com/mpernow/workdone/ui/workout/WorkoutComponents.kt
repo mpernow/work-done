@@ -54,7 +54,10 @@ import com.mpernow.workdone.domain.TrackingType
 import com.mpernow.workdone.domain.WeightUnit
 import com.mpernow.workdone.domain.usesSplits
 
-/** An exercise's sets plus an input row for the next one. Tapping a set opens it for editing. */
+/**
+ * An exercise's sets plus an input row for the next one, behind an "Add set" button once there are
+ * sets. Tapping a set opens it for editing.
+ */
 @Composable
 fun ExerciseCard(
     block: ExerciseBlock,
@@ -96,14 +99,29 @@ fun ExerciseCard(
                     SplitsTotals(summary, totalLabel)
                 }
             }
-            Row(
-                modifier = Modifier.padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SetInputFields(block.exercise.trackingType, unit, block.draft, onDraftChange, Modifier.weight(1f))
-                FilledTonalIconButton(onClick = onAddSet, enabled = block.canAddSet) {
-                    Icon(Icons.Filled.Check, contentDescription = "Log set")
+            // The input is always shown for the first set; after that it's opened with "Add set"
+            // and closes again once the set is logged.
+            var adding by rememberSaveable(block.sets.size) { mutableStateOf(false) }
+            if (block.sets.isEmpty() || adding) {
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SetInputFields(block.exercise.trackingType, unit, block.draft, onDraftChange, Modifier.weight(1f))
+                    FilledTonalIconButton(onClick = onAddSet, enabled = block.canAddSet) {
+                        Icon(Icons.Filled.Check, contentDescription = "Log set")
+                    }
+                    if (adding) {
+                        IconButton(onClick = { adding = false }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Cancel")
+                        }
+                    }
+                }
+            } else {
+                TextButton(onClick = { adding = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text("Add set")
                 }
             }
         }

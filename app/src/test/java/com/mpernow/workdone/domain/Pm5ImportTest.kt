@@ -27,6 +27,18 @@ class Pm5ImportTest {
     }
 
     @Test
+    fun aSingleTimeBecomesSplitsLikeASingleDistance() {
+        val workout = Pm5Workout.SingleTime(600)
+        assertEquals(TrackingType.DISTANCE_SPLITS, Pm5Import.trackingType(workout))
+        assertEquals("10:00", Pm5Import.describe(workout))
+        val timed = row.copy(timeSeconds = 120.0, meters = 465, splitSeconds = 129.0)
+        assertEquals(
+            listOf(SetValues(distanceMeters = 465.0, splitSeconds = 129.0, strokeRate = 28)),
+            Pm5Import.toSetValues(workout, listOf(timed)),
+        )
+    }
+
+    @Test
     fun timeIntervalsKeepTheWorkTime() {
         val workout = Pm5Workout.TimeIntervals(count = 1, workSeconds = 120, restSeconds = 60)
         val timed = row.copy(timeSeconds = 120.0, meters = 515, splitSeconds = 116.5)

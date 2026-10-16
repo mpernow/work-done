@@ -50,6 +50,42 @@ class Pm5ParserTest {
     }
 
     @Test
+    fun readsASingleTime() {
+        // The screen from a 10:00 piece: running times, but each split's own distance.
+        val words = row(1300, "10:00") + row(1450, "Oct", "16", "2026") + header +
+            row(1850, "10:00.0", "2371", "2:06.5", "21") +
+            row(2000, "2:00.0", "465", "2:09.0", "20") +
+            row(2130, "4:00.0", "470", "2:07.6", "22") +
+            row(2260, "6:00.0", "474", "2:06.5", "21") +
+            row(2390, "8:00.0", "478", "2:05.5", "22") +
+            row(2520, "10:00.0", "484", "2:03.9", "23")
+
+        val result = Pm5Parser.parse(words)
+
+        assertEquals(Pm5Workout.SingleTime(600), result.workout)
+        assertEquals(LocalDate.of(2026, 10, 16), result.date)
+        assertEquals(2371, result.total!!.meters)
+        assertEquals(List(5) { 120.0 }, result.rows.map { it.timeSeconds })
+        assertEquals(listOf(465, 470, 474, 478, 484), result.rows.map { it.meters })
+        assertEquals(listOf(129.0, 127.6, 126.5, 125.5, 123.9), result.rows.map { it.splitSeconds })
+        assertEquals(listOf(20, 22, 21, 22, 23), result.rows.map { it.strokeRate })
+        assertTrue(result.rows.all { it.problem == null })
+        assertEquals(emptyList<String>(), result.problems)
+    }
+
+    @Test
+    fun flagsATimedPieceWhoseSplitsDoNotAddUpToTheTotalDistance() {
+        val words = row(1300, "4:00") + header +
+            row(1850, "4:00.0", "950", "2:06.3", "21") +
+            row(2000, "2:00.0", "465", "2:09.0", "20") +
+            row(2130, "4:00.0", "407", "2:07.6", "22") // 470 misread as 407
+
+        val result = Pm5Parser.parse(words)
+
+        assertEquals(listOf("The splits add up to 872 m, but the total says 950 m"), result.problems)
+    }
+
+    @Test
     fun readsTimeIntervals() {
         val words = row(1400, "8x2:00/1:00r") + header +
             row(1850, "16:00.0", "4120", "1:56.5", "26") +

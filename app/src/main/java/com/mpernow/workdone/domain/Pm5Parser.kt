@@ -11,14 +11,15 @@ data class OcrWord(val text: String, val left: Int, val top: Int, val right: Int
     val height: Int get() = bottom - top
 }
 
-/** The workout named at the top of a PM5 results screen, such as "6x500m/2:00r" or "2000m". */
+/** The workout named at the top of a PM5 results screen, such as "6x500m/2:00r", "2000m" or "10:00". */
 sealed interface Pm5Workout {
     data class DistanceIntervals(val count: Int, val meters: Int, val restSeconds: Int) : Pm5Workout
     data class TimeIntervals(val count: Int, val workSeconds: Int, val restSeconds: Int) : Pm5Workout
     data class SingleDistance(val meters: Int) : Pm5Workout
+    data class SingleTime(val seconds: Int) : Pm5Workout
 }
 
-/** One row of the results table. Distances are per row, already converted from running totals. */
+/** One row of the results table. Distances and times are per row, already converted from running totals. */
 data class Pm5Row(
     val timeSeconds: Double?,
     val meters: Int?,
@@ -60,7 +61,7 @@ object Pm5Parser {
         val tableRows = lines.drop(headerIndex + 1).mapNotNull { parseRow(it, columns) }
 
         val (total, splitRows) = separateTotal(tableRows, workout)
-        val rows = toPerRowDistances(splitRows, total, workout).map(::checkRow)
+        val rows = toPerRowTimes(toPerRowDistances(splitRows, total, workout), total, workout).map(::checkRow)
         return Pm5Result(workout, date, total, rows, overallProblems(workout, total, rows))
     }
 
@@ -132,6 +133,8 @@ object Pm5Parser {
     private val DISTANCE_INTERVALS = Regex("""(\d{1,2})\s*[x×X]\s*(\d{2,5})\s*m\W*(\d{1,2})[.:](\d{2})\s*r""")
     private val TIME_INTERVALS = Regex("""(\d{1,2})\s*[x×X]\s*(\d{1,2})[.:](\d{2})\W*(\d{1,2})[.:](\d{2})\s*r""")
     private val SINGLE_DISTANCE = Regex("""^\s*(\d{3,5})\s*m\s*$""")
+    // A time on a line of its own, without tenths, unlike the times in the table.
+    private val SINGLE_TIME = Regex("""^\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*$""")
 
     private fun parseWorkout(line: String): Pm5Workout? {
         DISTANCE_INTERVALS.find(line)?.destructured?.let { (count, meters, restMin, restSec) ->
@@ -145,6 +148,10 @@ object Pm5Parser {
             )
         }
         SINGLE_DISTANCE.find(line)?.destructured?.let { (meters) -> return Pm5Workout.SingleDistance(meters.toInt()) }
+        SINGLE_TIME.find(line)?.destructured?.let { (hours, minutes, seconds) ->
+            if (seconds.toInt() >= 60) return null
+            return Pm5Workout.SingleTime(hours.ifEmpty { "0" }.toInt() * 3600 + minutes.toInt() * 60 + seconds.toInt())
+        }
         return null
     }
 
@@ -217,6 +224,8 @@ object Pm5Parser {
             is Pm5Workout.TimeIntervals ->
                 first.timeSeconds?.let { abs(it - workout.workSeconds) > 1 } ?: looksLonger(first, rest)
             is Pm5Workout.SingleDistance -> first.meters?.let { it == workout.meters } ?: looksLonger(first, rest)
+            is Pm5Workout.SingleTime ->
+                first.timeSeconds?.let { abs(it - workout.seconds) <= 1 } ?: looksLonger(first, rest)
             null -> looksLonger(first, rest)
         }
         return if (isSummary) first to rest else null to rows
@@ -231,6 +240,8 @@ object Pm5Parser {
 
     /** A single piece shows running totals (500, 1000, 1500…); intervals show each one's own distance. */
     private fun toPerRowDistances(rows: List<Pm5Row>, total: Pm5Row?, workout: Pm5Workout?): List<Pm5Row> {
+        // A timed piece shows each split's own distance, which may well be increasing.
+        if (workout is Pm5Workout.SingleTime) return rows
         val meters = rows.map { it.meters }
         if (meters.any { it == null } || meters.size < 2) return rows
         val values = meters.filterNotNull()
@@ -238,6 +249,18 @@ object Pm5Parser {
         val endsAtTotal = values.last() == (total?.meters ?: (workout as? Pm5Workout.SingleDistance)?.meters)
         if (!(increasing && (endsAtTotal || workout is Pm5Workout.SingleDistance))) return rows
         return rows.mapIndexed { index, row -> row.copy(meters = values[index] - (values.getOrNull(index - 1) ?: 0)) }
+    }
+
+    /** A timed piece shows running times (2:00, 4:00, 6:00…) instead; other workouts show each row's own. */
+    private fun toPerRowTimes(rows: List<Pm5Row>, total: Pm5Row?, workout: Pm5Workout?): List<Pm5Row> {
+        if (workout !is Pm5Workout.SingleTime) return rows
+        val times = rows.map { it.timeSeconds }
+        if (times.any { it == null } || times.size < 2) return rows
+        val values = times.filterNotNull()
+        val increasing = values.zipWithNext().all { (a, b) -> b > a }
+        val endsAtTotal = abs(values.last() - (total?.timeSeconds ?: workout.seconds.toDouble())) <= 0.1
+        if (!(increasing && endsAtTotal)) return rows
+        return rows.mapIndexed { index, row -> row.copy(timeSeconds = values[index] - (values.getOrNull(index - 1) ?: 0.0)) }
     }
 
     private fun checkRow(row: Pm5Row): Pm5Row {
@@ -281,6 +304,11 @@ object Pm5Parser {
         if (workout is Pm5Workout.SingleDistance && rows.all { it.meters != null }) {
             val sum = rows.sumOf { it.meters!! }
             if (sum != workout.meters) add("The splits add up to $sum m, not ${workout.meters} m")
+        }
+        val totalMeters = total?.meters
+        if (workout is Pm5Workout.SingleTime && totalMeters != null && rows.all { it.meters != null }) {
+            val sum = rows.sumOf { it.meters!! }
+            if (sum != totalMeters) add("The splits add up to $sum m, but the total says $totalMeters m")
         }
     }
 

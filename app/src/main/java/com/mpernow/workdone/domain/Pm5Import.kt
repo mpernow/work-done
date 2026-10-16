@@ -7,13 +7,13 @@ object Pm5Import {
     fun trackingType(workout: Pm5Workout): TrackingType = when (workout) {
         is Pm5Workout.DistanceIntervals -> TrackingType.INTERVALS_DISTANCE
         is Pm5Workout.TimeIntervals -> TrackingType.INTERVALS_TIME
-        is Pm5Workout.SingleDistance -> TrackingType.DISTANCE_SPLITS
+        is Pm5Workout.SingleDistance, is Pm5Workout.SingleTime -> TrackingType.DISTANCE_SPLITS
     }
 
     fun restSeconds(workout: Pm5Workout): Int? = when (workout) {
         is Pm5Workout.DistanceIntervals -> workout.restSeconds
         is Pm5Workout.TimeIntervals -> workout.restSeconds
-        is Pm5Workout.SingleDistance -> null
+        is Pm5Workout.SingleDistance, is Pm5Workout.SingleTime -> null
     }
 
     /** One set per row. Rest is the workout's; resistance isn't on the screen, so it's left out. */
@@ -22,7 +22,7 @@ object Pm5Import {
         when (workout) {
             is Pm5Workout.TimeIntervals ->
                 base.copy(durationSeconds = row.timeSeconds?.roundToInt() ?: workout.workSeconds)
-            is Pm5Workout.DistanceIntervals, is Pm5Workout.SingleDistance ->
+            is Pm5Workout.DistanceIntervals, is Pm5Workout.SingleDistance, is Pm5Workout.SingleTime ->
                 base.copy(distanceMeters = row.meters?.toDouble())
         }
     }
@@ -34,12 +34,13 @@ object Pm5Import {
         else -> "Rowing (splits)"
     }
 
-    /** "6 × 500 m, 2:00 rest", "8 × 2:00, 1:00 rest" or "2000 m". */
+    /** "6 × 500 m, 2:00 rest", "8 × 2:00, 1:00 rest", "2000 m" or "10:00". */
     fun describe(workout: Pm5Workout): String = when (workout) {
         is Pm5Workout.DistanceIntervals ->
             "${workout.count} × ${workout.meters} m, ${SetInput.formatDuration(workout.restSeconds)} rest"
         is Pm5Workout.TimeIntervals ->
             "${workout.count} × ${SetInput.formatDuration(workout.workSeconds)}, ${SetInput.formatDuration(workout.restSeconds)} rest"
         is Pm5Workout.SingleDistance -> "${workout.meters} m"
+        is Pm5Workout.SingleTime -> SetInput.formatDuration(workout.seconds)
     }
 }
