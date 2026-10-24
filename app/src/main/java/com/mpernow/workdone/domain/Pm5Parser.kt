@@ -343,13 +343,48 @@ object Pm5Parser {
     private fun toPerRowDistances(rows: List<Pm5Row>, total: Pm5Row?, workout: Pm5Workout?): List<Pm5Row> {
         // A timed piece shows each split's own distance, which may well be increasing.
         if (workout is Pm5Workout.SingleTime) return rows
-        val meters = rows.map { it.meters }
-        if (meters.any { it == null } || meters.size < 2) return rows
+        val read = if (workout is Pm5Workout.SingleDistance) repairRunningTotals(rows, workout.meters) else rows
+        val meters = read.map { it.meters }
+        if (meters.any { it == null } || meters.size < 2) return read
         val values = meters.filterNotNull()
         val increasing = values.zipWithNext().all { (a, b) -> b > a }
         val endsAtTotal = values.last() == (total?.meters ?: (workout as? Pm5Workout.SingleDistance)?.meters)
-        if (!(increasing && (endsAtTotal || workout is Pm5Workout.SingleDistance))) return rows
-        return rows.mapIndexed { index, row -> row.copy(meters = values[index] - (values.getOrNull(index - 1) ?: 0)) }
+        if (!(increasing && (endsAtTotal || workout is Pm5Workout.SingleDistance))) return read
+        return read.mapIndexed { index, row -> row.copy(meters = values[index] - (values.getOrNull(index - 1) ?: 0)) }
+    }
+
+    /**
+     * Running totals with a misread value ("B000" for 3000) worked out again from the row's time
+     * and split, which give its distance (time ÷ split × 500). A wrong running total spoils both
+     * its own row and the next, so a value is taken as misread when neither matches its time and
+     * split; a row whose own time or split was misread still leaves the next row matching.
+     */
+    private fun repairRunningTotals(rows: List<Pm5Row>, finalMeters: Int): List<Pm5Row> {
+        val values = rows.map { it.meters }.toMutableList()
+        // Whether row i's distance, from the running totals, matches its time and split; null if unknown.
+        fun matches(i: Int): Boolean? {
+            val row = rows.getOrNull(i) ?: return null
+            val total = values[i] ?: return null
+            val previous = if (i == 0) 0 else values[i - 1] ?: return null
+            if (row.timeSeconds == null || row.splitSeconds == null) return null
+            return timeMatchesSplit(row.timeSeconds, total - previous, row.splitSeconds)
+        }
+        var repaired = false
+        val result = rows.mapIndexed { i, row ->
+            val misread = values[i] == null || (matches(i) == false && matches(i + 1) != true)
+            val previous = if (i == 0) 0 else values[i - 1]
+            val fixed = when {
+                !misread -> null
+                i == rows.lastIndex -> finalMeters
+                previous == null || row.timeSeconds == null || row.splitSeconds == null || row.splitSeconds <= 0 -> null
+                else -> previous + (row.timeSeconds / row.splitSeconds * 500).roundToInt()
+            }
+            if (fixed == null || fixed == values[i]) return@mapIndexed row
+            values[i] = fixed
+            repaired = true
+            row.copy(meters = fixed, problem = "Distance worked out from the time and split; check it")
+        }
+        return if (repaired) result else rows
     }
 
     /** A timed piece shows running times (2:00, 4:00, 6:00…) instead; other workouts show each row's own. */
@@ -372,7 +407,7 @@ object Pm5Parser {
             row.strokeRate !in MIN_STROKE_RATE..MAX_STROKE_RATE -> "Stroke rate ${row.strokeRate} looks wrong"
             row.timeSeconds != null && !timeMatchesSplit(row.timeSeconds, row.meters, row.splitSeconds) ->
                 "Time and split don't match"
-            else -> null
+            else -> row.problem
         }
         return row.copy(problem = problem)
     }

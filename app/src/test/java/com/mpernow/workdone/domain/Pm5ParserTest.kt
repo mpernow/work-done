@@ -50,6 +50,48 @@ class Pm5ParserTest {
     }
 
     @Test
+    fun repairsAMisreadRunningTotalInARealPhotoOfASingleDistance() {
+        // Recognised with "B000" for 3000, which would otherwise be taken as 8000.
+        val result = Pm5Parser.parse(fixture("single_distance_misread.tsv"))
+
+        assertEquals(Pm5Workout.SingleDistance(5000), result.workout)
+        assertEquals(List(5) { 1000 }, result.rows.map { it.meters })
+        assertEquals(listOf(126.0, 124.6, 124.5, 124.4, 122.2), result.rows.map { it.splitSeconds })
+        assertEquals(listOf(null, null, "Distance worked out from the time and split; check it", null, null), result.rows.map { it.problem })
+        assertEquals(emptyList<String>(), result.problems)
+    }
+
+    @Test
+    fun worksOutAnUnreadRunningTotalFromTheTimeAndSplit() {
+        val words = row(1300, "2000m") + header +
+            row(1850, "7:00.0", "2000", "1:45.0", "28") +
+            row(2000, "1:45.0", "500", "1:45.0", "28") +
+            row(2130, "1:45.0", "1:45.0", "28") +
+            row(2260, "1:45.0", "1500", "1:45.0", "28") +
+            row(2390, "1:45.0", "2000", "1:45.0", "28")
+
+        val result = Pm5Parser.parse(words)
+
+        assertEquals(List(4) { 500 }, result.rows.map { it.meters })
+        assertEquals(emptyList<String>(), result.problems)
+    }
+
+    @Test
+    fun keepsRunningTotalsWhenOnlyATimeIsMisread() {
+        val words = row(1300, "2000m") + header +
+            row(1850, "7:00.0", "2000", "1:45.0", "28") +
+            row(2000, "1:45.0", "500", "1:45.0", "28") +
+            row(2130, "7:45.0", "1000", "1:45.0", "28") +
+            row(2260, "1:45.0", "1500", "1:45.0", "28") +
+            row(2390, "1:45.0", "2000", "1:45.0", "28")
+
+        val result = Pm5Parser.parse(words)
+
+        assertEquals(List(4) { 500 }, result.rows.map { it.meters })
+        assertEquals("Time and split don't match", result.rows[1].problem)
+    }
+
+    @Test
     fun joinsRealPhotosOfAScrolledScreenDespiteAMisreadRate() {
         // Rows 1–8, then 3–9 and the rest distance ("r188"); the tenth wasn't in view. The first
         // photo has "B0" for the fourth row's rate of 30, and "i:30r" in the workout.
