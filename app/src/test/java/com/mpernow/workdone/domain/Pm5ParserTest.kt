@@ -108,6 +108,125 @@ class Pm5ParserTest {
     }
 
     @Test
+    fun readsRealPm4PhotosWithMisreadColons() {
+        // Rows 1–8, then 9–15 and the rest distance ("r270"), with no rows in common. The first
+        // photo has "1512:00/1:00r" for the workout; colons are lost ("155,6"), read as a "1"
+        // ("2100.0", "1152.1"), doubled up ("1:56.,2"), and a split runs into its rate ("157.1.30").
+        val result = Pm5Parser.parsePhotos(listOf(fixture("pm4_intervals_time_part1.tsv"), fixture("pm4_intervals_time_part2.tsv")))
+
+        assertEquals(Pm5Workout.TimeIntervals(count = 15, workSeconds = 120, restSeconds = 60), result.workout)
+        assertEquals(listOf(536, 536, 539, 530, 524, 518, 519, 515, 509, 516, 512, 514, 514, 518, 535), result.rows.map { it.meters })
+        assertEquals(
+            listOf(111.9, 111.9, 111.3, 113.2, 114.5, 115.8, 115.6, 116.5, 117.8, 116.2, 117.1, 116.7, 116.7, 115.8, 112.1),
+            result.rows.map { it.splitSeconds },
+        )
+        assertEquals(listOf(32, 31, 31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 31, 31), result.rows.map { it.strokeRate })
+        assertEquals(List(15) { 120.0 }, result.rows.map { it.timeSeconds })
+        assertTrue(result.rows.all { it.problem == null })
+        assertEquals(emptyList<String>(), result.problems)
+    }
+
+    @Test
+    fun readsRealPm4PhotosWithEvenedOutLighting() {
+        // The same photos with their lighting evened out before recognition: the colons are read,
+        // but the seventh interval's time runs into its distance ("Z:00.0519").
+        val result = Pm5Parser.parsePhotos(
+            listOf(fixture("pm4_intervals_time_flattened_part1.tsv"), fixture("pm4_intervals_time_flattened_part2.tsv")),
+        )
+
+        assertEquals(Pm5Workout.TimeIntervals(count = 15, workSeconds = 120, restSeconds = 60), result.workout)
+        assertEquals(listOf(536, 536, 539, 530, 524, 518, 519, 515, 509, 516, 512, 514, 514, 518, 535), result.rows.map { it.meters })
+        assertEquals(115.6, result.rows[6].splitSeconds!!, 1e-9)
+        assertTrue(result.rows.all { it.problem == null })
+        assertEquals(emptyList<String>(), result.problems)
+    }
+
+    @Test
+    fun takesEachValueFromTheReadingOfAPhotoThatMakesItsRowConsistent() {
+        // Each real photo read with its lighting evened out, then as taken. Evened out, the ninth
+        // interval's 1:43.8 was read as "1:43,3", which doesn't match 289 m in 1:00.0.
+        val photos = listOf(
+            PhotoText(listOf(fixture("intervals_time_flattened_part1.tsv"), fixture("intervals_time_part1.tsv"))),
+            PhotoText(listOf(fixture("intervals_time_flattened_part2.tsv"), fixture("intervals_time_part2.tsv"))),
+        )
+
+        val result = Pm5Parser.parsePhotoTexts(photos)
+
+        assertEquals(Pm5Workout.TimeIntervals(count = 10, workSeconds = 60, restSeconds = 90), result.workout)
+        assertEquals(listOf(299, 298, 296, 292, 292, 295, 292, 294, 289), result.rows.map { it.meters })
+        assertEquals(listOf(100.3, 100.6, 101.3, 102.7, 102.7, 101.6, 102.7, 102.0, 103.8), result.rows.map { it.splitSeconds })
+        assertTrue(result.rows.all { it.problem == null })
+    }
+
+    @Test
+    fun keepsARowThatOnlyOneReadingOfAPhotoFound() {
+        val top =row(1400, "3x500m/1:00r") + header + row(1850, "5:15.0", "1500", "1:45.0", "28")
+        val evened = top + row(2000, "1:45.0", "500", "1:45.0", "28") + row(2260, "1:46.0", "500", "1:46.0", "27")
+        val asTaken = top + row(2000, "1:45.0", "500", "1:45.0", "28") + row(2130, "1:44.0", "500", "1:44.0", "29")
+
+        val result = Pm5Parser.parsePhotoTexts(listOf(PhotoText(listOf(evened, asTaken))))
+
+        assertEquals(listOf(105.0, 104.0, 106.0), result.rows.map { it.splitSeconds })
+        assertEquals(emptyList<String>(), result.problems)
+    }
+
+    @Test
+    fun readsAWorkoutWithItsXMisreadWhenTheSummaryRowConfirmsIt() {
+        // The real PM4 photo, where "15x2:00/1:00r" was read as "1512:00/1:00r"; the summary row is 30:00.0.
+        val result = Pm5Parser.parse(fixture("pm4_intervals_time_part1.tsv"))
+
+        assertEquals(Pm5Workout.TimeIntervals(count = 15, workSeconds = 120, restSeconds = 60), result.workout)
+        assertEquals(8, result.rows.size)
+    }
+
+    @Test
+    fun readsDistanceIntervalsWithTheirXMisread() {
+        val words = row(1400, "4:500m/2:00r") + header +
+            row(1850, "7:00.0", "2000", "1:45.0", "28") +
+            row(2000, "1:45.0", "500", "1:45.0", "28")
+
+        assertEquals(Pm5Workout.DistanceIntervals(count = 4, meters = 500, restSeconds = 120), Pm5Parser.parse(words).workout)
+    }
+
+    @Test
+    fun doesNotTakeAMisreadWorkoutThatTheSummaryRowDoesNotConfirm() {
+        // 15 × 2:00 would make the summary 30:00.0.
+        val words = row(1400, "1512:00/1:00r") + header +
+            row(1850, "20:00.0", "5200", "1:55.4", "30") +
+            row(2000, "2:00.0", "520", "1:55.4", "30")
+
+        assertNull(Pm5Parser.parse(words).workout)
+    }
+
+    @Test
+    fun repairsAColonOnlyInTheReadingThatMatchesTheRow() {
+        // "2100.0" may be 21:00.0 or 2:00.0 (colon read as "1"); only 2:00.0 matches 518 m at 1:55.8.
+        val words = row(1400, "8x2:00/1:00r") + header +
+            row(1850, "16:00.0", "4144", "1:55.8", "31") +
+            row(2000, "2100.0", "518", "1155.8", "31") +
+            row(2130, "200.0", "518", "1:55.8", "31")
+
+        val result = Pm5Parser.parse(words)
+
+        assertEquals(listOf(120.0, 120.0), result.rows.map { it.timeSeconds })
+        assertEquals(listOf(115.8, 115.8), result.rows.map { it.splitSeconds })
+        assertTrue(result.rows.all { it.problem == null })
+    }
+
+    @Test
+    fun leavesAColonUnrepairedWhenNoReadingMatchesTheRow() {
+        // 1:55.8 would be right for 518 m in 2:00; 1:58.8 isn't, so the split is left unread.
+        val words = row(1400, "8x2:00/1:00r") + header +
+            row(1850, "16:00.0", "4144", "1:55.8", "31") +
+            row(2000, "2:00.0", "518", "158,8", "31")
+
+        val row = Pm5Parser.parse(words).rows.single()
+
+        assertNull(row.splitSeconds)
+        assertEquals("Couldn't read the split", row.problem)
+    }
+
+    @Test
     fun readsRealPhotoOfASingleTime() {
         val result = Pm5Parser.parse(fixture("single_time.tsv"))
 

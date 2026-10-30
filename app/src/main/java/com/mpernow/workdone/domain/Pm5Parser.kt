@@ -11,6 +11,13 @@ data class OcrWord(val text: String, val left: Int, val top: Int, val right: Int
     val height: Int get() = bottom - top
 }
 
+/**
+ * The words recognised in one photo, once for each version of it that was read (such as with its
+ * lighting evened out, and as it was taken), all in the same coordinates. Earlier readings are
+ * preferred where readings disagree and nothing else tells which is right.
+ */
+data class PhotoText(val readings: List<List<OcrWord>>)
+
 /** The workout named at the top of a PM5 results screen, such as "6x500m/2:00r", "2000m" or "10:00". */
 sealed interface Pm5Workout {
     data class DistanceIntervals(val count: Int, val meters: Int, val restSeconds: Int) : Pm5Workout
@@ -49,7 +56,12 @@ data class Pm5Result(
  * time matches its split), which is used to flag misread numbers.
  *
  * A long workout doesn't fit on the screen, so it may come as several photos of the same screen
- * scrolled further down each time; see [parsePhotos] for how they're joined.
+ * scrolled further down each time; see [parsePhotos] for how they're joined. Each photo may also
+ * have been read more than once; see [parsePhotoTexts].
+ *
+ * Some misreadings are only repaired when the text doesn't read as it is, and the repair is
+ * confirmed by the rest of the screen: an "x" read as another character in the workout, and a
+ * colon lost or read as a "1" in a time (the PM4's faint LCD colons often are).
  */
 object Pm5Parser {
     fun parse(words: List<OcrWord>): Pm5Result = parsePhotos(listOf(words))
@@ -60,9 +72,17 @@ object Pm5Parser {
      * scrolled screen repeats the rows that were already at the bottom. A value misread in one
      * photo is taken from the other where a row is in both.
      */
-    fun parsePhotos(photos: List<List<OcrWord>>): Pm5Result {
-        val screens = photos.map(::readScreen)
-        val workout = screens.firstNotNullOfOrNull { it.workout }
+    fun parsePhotos(photos: List<List<OcrWord>>): Pm5Result = parsePhotoTexts(photos.map { PhotoText(listOf(it)) })
+
+    /**
+     * Like [parsePhotos], for photos read more than once. A row is matched across a photo's
+     * readings by where it is on the photo, and combined like a row in two photos: a value one
+     * reading misses is taken from another, and where they disagree, the reading that makes the
+     * row consistent wins.
+     */
+    fun parsePhotoTexts(photos: List<PhotoText>): Pm5Result {
+        val screens = photos.map(::readPhoto)
+        val workout = screens.firstNotNullOfOrNull { it.workout } ?: confirmedMisreadWorkout(screens)
         val date = screens.firstNotNullOfOrNull { it.date }
         val separated = screens.map { separateTotal(it.rows, workout) }
         val total = separated.firstNotNullOfOrNull { it.first }
@@ -86,21 +106,89 @@ object Pm5Parser {
     }
 
     /** What one photo shows, before its rows are joined with other photos'. */
-    private class Screen(val workout: Pm5Workout?, val date: LocalDate?, val rows: List<Pm5Row>)
+    private class Screen(
+        val workout: Pm5Workout?,
+        val date: LocalDate?,
+        val placedRows: List<PlacedRow>,
+        /** What the workout could be if its "x" was misread; only looked for when [workout] wasn't read. */
+        val misreadWorkouts: List<Pm5Workout>,
+        /** The typical height of a word, for telling whether rows of two readings are the same. */
+        val wordHeight: Int,
+    ) {
+        val rows: List<Pm5Row> get() = placedRows.map { it.row }
+    }
+
+    /** A table row and the height of its centre on the photo. */
+    private class PlacedRow(val row: Pm5Row, val centerY: Int)
+
+    /** One photo from all its readings: the workout and date from the first that has them, and the rows combined. */
+    private fun readPhoto(text: PhotoText): Screen {
+        val readings = text.readings.map(::readScreen)
+        val workout = readings.firstNotNullOfOrNull { it.workout }
+        return Screen(
+            workout = workout,
+            date = readings.firstNotNullOfOrNull { it.date },
+            placedRows = readings.drop(1).fold(readings.firstOrNull()?.placedRows.orEmpty()) { rows, reading ->
+                mergeReadings(rows, reading.placedRows, tolerance = maxOf(readings.first().wordHeight, reading.wordHeight) / 2)
+            },
+            misreadWorkouts = if (workout == null) readings.flatMap { it.misreadWorkouts }.distinct() else emptyList(),
+            wordHeight = readings.maxOfOrNull { it.wordHeight } ?: 0,
+        )
+    }
+
+    /**
+     * The rows of two readings of one photo, where a row of [other] within [tolerance] of the
+     * height of one in [rows] is the same row; a row only one reading found is kept as it is.
+     */
+    private fun mergeReadings(rows: List<PlacedRow>, other: List<PlacedRow>, tolerance: Int): List<PlacedRow> {
+        val unmatched = other.toMutableList()
+        val merged = rows.map { placed ->
+            val match = unmatched.minByOrNull { abs(it.centerY - placed.centerY) }
+                ?.takeIf { abs(it.centerY - placed.centerY) <= tolerance }
+                ?: return@map placed
+            unmatched.remove(match)
+            PlacedRow(combine(placed.row, match.row), placed.centerY)
+        }
+        return (merged + unmatched).sortedBy { it.centerY }
+    }
 
     private fun readScreen(words: List<OcrWord>): Screen {
-        val lines = groupIntoLines(withoutOutliers(words))
+        val readable = withoutOutliers(words)
+        val lines = groupIntoLines(readable)
         val lineTexts = lines.map { line -> line.joinToString(" ") { normalizeToken(it.text) } }
 
         // The table starts after the column header; without one, try every line.
         val headerIndex = lineTexts.indexOfFirst { it.lowercase().let { t -> "meter" in t || "s/m" in t } }
         val columns = lines.getOrNull(headerIndex)?.let(::findColumns) ?: Columns()
+        val workout = lineTexts.firstNotNullOfOrNull(::parseWorkout)
         return Screen(
-            workout = lineTexts.firstNotNullOfOrNull(::parseWorkout),
+            workout = workout,
             date = lineTexts.firstNotNullOfOrNull(::parseDate),
-            rows = lines.drop(headerIndex + 1).mapNotNull { parseRow(it, columns) },
+            placedRows = lines.drop(headerIndex + 1).mapNotNull { line ->
+                parseRow(line, columns)?.let { PlacedRow(it, line.map { word -> word.centerY }.average().toInt()) }
+            },
+            misreadWorkouts = if (workout == null) lineTexts.flatMap(::parseMisreadWorkouts).distinct() else emptyList(),
+            wordHeight = readable.map { it.height }.sorted().let { it.getOrNull(it.size / 2) } ?: 0,
         )
     }
+
+    /**
+     * A workout read with its "x" misread, when no photo's workout could be read as it is. It's
+     * only accepted when the summary row covers it: the time of all intervals together, or their
+     * distance, so a wrong count or length is never taken.
+     */
+    private fun confirmedMisreadWorkout(screens: List<Screen>): Pm5Workout? =
+        screens.flatMap { it.misreadWorkouts }.distinct().firstOrNull { workout ->
+            screens.any { screen ->
+                val total = separateTotal(screen.rows, workout).first ?: return@any false
+                when (workout) {
+                    is Pm5Workout.TimeIntervals ->
+                        total.timeSeconds?.let { abs(it - workout.count * workout.workSeconds) <= 1 } == true
+                    is Pm5Workout.DistanceIntervals -> total.meters == workout.count * workout.meters
+                    else -> false
+                }
+            }
+        }
 
     private fun expectedCount(workout: Pm5Workout?): Int? = when (workout) {
         is Pm5Workout.DistanceIntervals -> workout.count
@@ -149,8 +237,8 @@ object Pm5Parser {
     }
 
     /**
-     * One row read in two photos: values missing from one are taken from the other, and where
-     * they disagree, the reading that is consistent wins, or else the first photo's.
+     * One row read in two photos, or two readings of one: values missing from one are taken from
+     * the other, and where they disagree, the reading that is consistent wins, or else the first.
      */
     private fun combine(a: Pm5Row, b: Pm5Row): Pm5Row {
         fun filled(row: Pm5Row, other: Pm5Row) = Pm5Row(
@@ -231,6 +319,16 @@ object Pm5Parser {
         ';' to ':',
     )
 
+    // The small "x" of the PM4 is sometimes read as "1" or ":" ("1512:00/1:00r" for 15x2:00/1:00r).
+    private const val MISREAD_X = "[1:.]"
+    // One- and two-digit counts are tried separately, as "1512:00" may be 15 or 1 interval(s).
+    private val MISREAD_DISTANCE_INTERVALS = (1..2).map { digits ->
+        Regex("""(?<!\d)(\d{$digits})$MISREAD_X(\d{2,5})\s*m\W*(\d{1,2})[.:](\d{2})\s*r""")
+    }
+    private val MISREAD_TIME_INTERVALS = (1..2).map { digits ->
+        Regex("""(?<!\d)(\d{$digits})$MISREAD_X(\d{1,2})[.:](\d{2})\W*(\d{1,2})[.:](\d{2})\s*r""")
+    }
+
     private val DISTANCE_INTERVALS = Regex("""(\d{1,2})\s*[x×X]\s*(\d{2,5})\s*m\W*(\d{1,2})[.:](\d{2})\s*r""")
     private val TIME_INTERVALS = Regex("""(\d{1,2})\s*[x×X]\s*(\d{1,2})[.:](\d{2})\W*(\d{1,2})[.:](\d{2})\s*r""")
     private val SINGLE_DISTANCE = Regex("""^\s*(\d{3,5})\s*m\s*$""")
@@ -256,6 +354,16 @@ object Pm5Parser {
         return null
     }
 
+    /** Every reading of an intervals workout whose "x" was misread; see [confirmedMisreadWorkout]. */
+    private fun parseMisreadWorkouts(line: String): List<Pm5Workout> =
+        MISREAD_DISTANCE_INTERVALS.flatMap { it.findAll(line) }.map { match ->
+            val (count, meters, restMin, restSec) = match.destructured
+            Pm5Workout.DistanceIntervals(count.toInt(), meters.toInt(), restMin.toInt() * 60 + restSec.toInt())
+        } + MISREAD_TIME_INTERVALS.flatMap { it.findAll(line) }.map { match ->
+            val (count, workMin, workSec, restMin, restSec) = match.destructured
+            Pm5Workout.TimeIntervals(count.toInt(), workMin.toInt() * 60 + workSec.toInt(), restMin.toInt() * 60 + restSec.toInt())
+        }
+
     private val DATE = Regex("""(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*(\d{1,2})\s*,?\s*(\d{4})""")
 
     private fun parseDate(line: String): LocalDate? {
@@ -276,18 +384,33 @@ object Pm5Parser {
         return (hours.ifEmpty { "0" }.toInt() * 3600 + minutes.toInt() * 60 + seconds.toInt()) + tenths.toInt() / 10.0
     }
 
+    /** A word of a table row, with where it is across the screen. */
+    private class Cell(val text: String, val left: Int, val right: Int) {
+        val x: Int get() = (left + right) / 2
+    }
+
     /**
-     * A table row: time, metres, split and stroke rate. Times and whole numbers are told apart by
-     * their format, and each is placed in a column by its position under the header when the
-     * header was read; otherwise by order, so a misread value doesn't shift the others.
+     * A table row: time, metres, split and stroke rate. Words that don't read as a time or a
+     * number may be times with a misread colon; see [repairedRow].
      */
     private fun parseRow(line: List<OcrWord>, columns: Columns): Pm5Row? {
-        val tokens = line.map { word -> normalizeToken(word.text) to (word.left + word.right) / 2 }
-            .filter { (text, _) -> text.isNotBlank() }
+        val cells = line.map { word -> Cell(normalizeToken(word.text), word.left, word.right) }.filter { it.text.isNotBlank() }
         // Data rows are numbers only; this keeps out lines like "Sep 15 2026" and "Total Time: 22:35.4".
-        if (tokens.any { (text, _) -> text.any(Char::isLetter) }) return null
-        val times = tokens.mapNotNull { (text, x) -> parseTime(text)?.let { it to x } }
-        val numbers = tokens.mapNotNull { (text, x) -> text.takeIf { NUMBER_TOKEN.matches(it) }?.toInt()?.let { it to x } }
+        if (cells.any { cell -> cell.text.any(Char::isLetter) }) return null
+        val row = readRow(cells, columns)
+        val unread = cells.filter { parseTime(it.text) == null && !NUMBER_TOKEN.matches(it.text) }
+        if (unread.isEmpty()) return row
+        return repairedRow(cells, unread, columns) ?: row
+    }
+
+    /**
+     * Times and whole numbers are told apart by their format, and each is placed in a column by
+     * its position under the header when the header was read; otherwise by order, so a misread
+     * value doesn't shift the others.
+     */
+    private fun readRow(cells: List<Cell>, columns: Columns): Pm5Row? {
+        val times = cells.mapNotNull { cell -> parseTime(cell.text)?.let { it to cell.x } }
+        val numbers = cells.mapNotNull { cell -> cell.text.takeIf { NUMBER_TOKEN.matches(it) }?.toInt()?.let { it to cell.x } }
         if (times.isEmpty() || times.size + numbers.size < 3) return null
 
         val (time, split) = when {
@@ -310,6 +433,57 @@ object Pm5Parser {
         }
         return Pm5Row(timeSeconds = time, meters = meters, splitSeconds = split, strokeRate = rate)
     }
+
+    /**
+     * The row with its [unread] words read as times with a misread colon, trying each reading of
+     * each word; null unless a reading makes the row's time, distance and split agree, which an
+     * unchecked reading couldn't be trusted without. Rows of running totals can't be checked this
+     * way, so they're left as they are.
+     */
+    private fun repairedRow(cells: List<Cell>, unread: List<Cell>, columns: Columns): Pm5Row? {
+        var candidates = listOf(cells)
+        for (cell in unread) {
+            // A word that can't be a time is left as it is, and ignored as it was before.
+            val readings = colonRepairs(cell).ifEmpty { listOf(listOf(cell)) }
+            candidates = candidates.flatMap { candidate ->
+                readings.map { reading -> candidate.flatMap { if (it === cell) reading else listOf(it) } }
+            }
+        }
+        return candidates.firstNotNullOfOrNull { candidate ->
+            readRow(candidate, columns)?.takeIf { row ->
+                row.timeSeconds != null && row.meters != null && row.splitSeconds != null &&
+                    timeMatchesSplit(row.timeSeconds, row.meters, row.splitSeconds)
+            }
+        }
+    }
+
+    /**
+     * The ways [cell] could be a time with its colon lost or misread: "155,6" for 1:55.6,
+     * "2100.0" (2:00.0, or 21:00.0), "1:56.,2", or a time joined to the number after it: the
+     * distance, "2:00.0519", or the stroke rate, "157.1.30".
+     */
+    private fun colonRepairs(cell: Cell): List<List<Cell>> {
+        fun times(text: String): List<String> {
+            val collapsed = text.replace(Regex("""[.,:]{2,}""")) { it.value.last().toString() }
+            return listOfNotNull(
+                collapsed,
+                COLON_LOST.find(collapsed)?.destructured?.let { (minutes, rest) -> "$minutes:$rest" },
+                COLON_READ_AS_ONE.find(collapsed)?.destructured?.let { (minutes, rest) -> "$minutes:$rest" },
+            ).distinct().filter { parseTime(it) != null }
+        }
+        val alone = times(cell.text).map { listOf(Cell(it, cell.left, cell.right)) }
+        // The time ends at its tenths, a single digit, so the digits after it are the number.
+        val joined = JOINED_NUMBER.find(cell.text)?.destructured?.let { (time, number) ->
+            // The number's digits are at the right of the word, the time's take up the rest.
+            val numberLeft = cell.right - (cell.right - cell.left) * number.length / cell.text.length
+            times(time).map { listOf(Cell(it, cell.left, numberLeft), Cell(number, numberLeft, cell.right)) }
+        }.orEmpty()
+        return alone + joined
+    }
+
+    private val COLON_LOST = Regex("""^(\d{1,2})(\d{2}[.,]\d)$""")
+    private val COLON_READ_AS_ONE = Regex("""^(\d{1,2})1(\d{2}[.,]\d)$""")
+    private val JOINED_NUMBER = Regex("""^(.*\d[.,]\d)[.,:]?(\d{2,5})$""")
 
     /**
      * The PM5 lists the summary row first, but it may not have been recognised. It's told apart

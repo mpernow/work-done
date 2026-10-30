@@ -65,7 +65,7 @@ import com.mpernow.workdone.data.ocr.PhotoTextReader
 import com.mpernow.workdone.data.repository.ExerciseRepository
 import com.mpernow.workdone.data.repository.WorkoutRepository
 import com.mpernow.workdone.domain.DigitTime
-import com.mpernow.workdone.domain.OcrWord
+import com.mpernow.workdone.domain.PhotoText
 import com.mpernow.workdone.domain.Pm5Import
 import com.mpernow.workdone.domain.Pm5Parser
 import com.mpernow.workdone.domain.Pm5Result
@@ -102,6 +102,14 @@ sealed interface RowingPhotoUi {
     data object ChoosePhoto : RowingPhotoUi
     data class Reading(val photo: Uri) : RowingPhotoUi
     data class Failed(val photo: Uri, val message: String) : RowingPhotoUi
+
+    /** Photos whose table was read but not the workout above it, which another photo may show. */
+    data class NeedsWorkout(
+        val photos: List<Uri>,
+        val rowCount: Int,
+        /** Why the last photo added couldn't be used, if it couldn't. */
+        val photoMessage: String?,
+    ) : RowingPhotoUi
     data class Review(
         /** Photos of the same screen, scrolled further down in each when it didn't fit on one. */
         val photos: List<Uri>,
@@ -137,41 +145,54 @@ class RowingPhotoViewModel(
     val state: StateFlow<RowingPhotoUi> = _state.asStateFlow()
 
     /** The photos read so far, with the words recognised in each. */
-    private var screens: List<Pair<Uri, List<OcrWord>>> = emptyList()
+    private var screens: List<Pair<Uri, PhotoText>> = emptyList()
 
     /** Starts over with [photo]. */
     fun readPhoto(photo: Uri) {
         screens = emptyList()
-        read(photo, previous = null)
+        read(photo, previous = RowingPhotoUi.ChoosePhoto)
     }
 
     /** Adds [photo] of the rest of the screen, for workouts that don't fit on one. */
     fun addPhoto(photo: Uri) {
-        val review = _state.value as? RowingPhotoUi.Review ?: return
-        read(photo, review)
+        val previous = _state.value
+        if (previous is RowingPhotoUi.Review || previous is RowingPhotoUi.NeedsWorkout) read(photo, previous)
     }
 
-    private fun read(photo: Uri, previous: RowingPhotoUi.Review?) {
+    private fun read(photo: Uri, previous: RowingPhotoUi) {
         _state.value = RowingPhotoUi.Reading(photo)
         viewModelScope.launch {
             _state.value = try {
-                val words = textReader.read(photo)
-                val result = Pm5Parser.parsePhotos(screens.map { it.second } + listOf(words))
-                val workout = result.workout
-                if (workout == null || Pm5Parser.parse(words).rows.isEmpty()) {
-                    val message = "Couldn't read a results table. Take the photo straight on, with the whole " +
-                        "\"View Detail\" screen in view and as little glare as possible."
-                    previous?.copy(photoMessage = message) ?: RowingPhotoUi.Failed(photo, message)
+                val text = textReader.read(photo)
+                if (Pm5Parser.parsePhotoTexts(listOf(text)).rows.isEmpty()) {
+                    rejected(
+                        photo,
+                        previous,
+                        "Couldn't read a results table. Take the photo straight on, with the whole " +
+                            "\"View Detail\" screen in view and as little glare as possible.",
+                    )
                 } else {
-                    screens = screens + (photo to words)
-                    review(result, workout, previous)
+                    screens = screens + (photo to text)
+                    val result = Pm5Parser.parsePhotoTexts(screens.map { it.second })
+                    val workout = result.workout
+                    if (workout == null) {
+                        RowingPhotoUi.NeedsWorkout(screens.map { it.first }, result.rows.size, photoMessage = null)
+                    } else {
+                        review(result, workout, previous as? RowingPhotoUi.Review)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Reading the photo failed", e)
-                val message = "Couldn't read the photo: ${e.message ?: e.javaClass.simpleName}"
-                previous?.copy(photoMessage = message) ?: RowingPhotoUi.Failed(photo, message)
+                rejected(photo, previous, "Couldn't read the photo: ${e.message ?: e.javaClass.simpleName}")
             }
         }
+    }
+
+    /** What to show when [photo] can't be used: the photos read before it, if there were any. */
+    private fun rejected(photo: Uri, previous: RowingPhotoUi, message: String): RowingPhotoUi = when (previous) {
+        is RowingPhotoUi.Review -> previous.copy(photoMessage = message)
+        is RowingPhotoUi.NeedsWorkout -> previous.copy(photoMessage = message)
+        else -> RowingPhotoUi.Failed(photo, message)
     }
 
     /** The review of everything read so far; choices made in the [previous] review are kept, but not row edits. */
@@ -284,7 +305,40 @@ fun RowingPhotoScreen(
                 Button(onClick = viewModel::choosePhotoAgain) { Text("Try another photo") }
             }
         }
+        is RowingPhotoUi.NeedsWorkout -> NeedsWorkout(current, viewModel, onNavigateUp)
         is RowingPhotoUi.Review -> Review(current, exercises, viewModel, onCreateExercise, onNavigateUp)
+    }
+}
+
+/** The table was read but not the workout above it, which a photo of the top of the screen may show. */
+@Composable
+private fun NeedsWorkout(state: RowingPhotoUi.NeedsWorkout, viewModel: RowingPhotoViewModel, onNavigateUp: () -> Unit) {
+    val photoSource = rememberPhotoSource(firstPhoto = false, viewModel::addPhoto)
+    AppScaffold("Rowing machine photo", onNavigateUp = onNavigateUp) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(state.photos) { PhotoPreview(it, Modifier.height(280.dp).width(210.dp)) }
+            }
+            Text(
+                "Read ${state.rowCount} ${if (state.rowCount == 1) "row" else "rows"}, but not the workout at the top of " +
+                    "the screen (such as \"8x2:00/1:00r\"). If the screen was scrolled, add a photo of the rest; " +
+                    "otherwise try another photo with the top of the screen clearer.",
+            )
+            if (state.photoMessage != null) {
+                Text(state.photoMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = photoSource.take) {
+                    Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text("Add photo")
+                }
+                TextButton(onClick = photoSource.choose) {
+                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text("From gallery")
+                }
+            }
+            Button(onClick = viewModel::choosePhotoAgain) { Text("Try another photo") }
+        }
     }
 }
 
